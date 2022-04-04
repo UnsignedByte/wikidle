@@ -26,9 +26,9 @@ fn main() {
 
     let mut fa = analyze::Frequency::new(&dict);
 
-    fa.insert(a.next().unwrap().unwrap());
+    fa.insert(a.next().unwrap().unwrap()).unwrap();
     
-    fa.insert(a.next().unwrap().unwrap());
+    fa.insert(a.next().unwrap().unwrap()).unwrap();
 
     dbg!(fa);
 }
