@@ -7,9 +7,11 @@ use regex::Regex;
 use lazy_static::lazy_static;
 
 lazy_static! {
+	/// Static regex for parsing words.
 	static ref WORD: Regex = Regex::new(r"\b[^\s]+\b").unwrap();
 }
 
+/// Error returned when attempting to write to a frequency table without a dictionary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReadOnlyError;
 
@@ -27,6 +29,7 @@ pub struct Frequency<'a> {
 }
 
 impl<'a> Frequency<'a> {
+	/// Create a new empty frequency data table with a dictionary.
 	pub fn new ( dict: &'a HashSet<String> ) -> Frequency {
 		Frequency {
 			data: HashMap::new(),
@@ -41,6 +44,14 @@ impl<'a> Frequency<'a> {
 	}
 
 	/// Parses a string to find all occurrences of valid words.
+	///
+	/// Arguments
+	/// * `article`: A string representing the article to parse for words.
+	///
+	/// Returns
+	/// * `Err(ReadOnlyError)` if the dictionary is undefined,
+	/// 	usually occurring if the data has been loaded from file.
+	/// * `Ok( () )` if parsed properly
 	pub fn insert ( &mut self, article: String ) -> Result<(), ReadOnlyError> {
 		let dict = self.dict.ok_or_else(|| ReadOnlyError)?;
 
@@ -51,6 +62,7 @@ impl<'a> Frequency<'a> {
 			let word = word.to_lowercase();
 
 			if dict.contains(&word) {
+				// Increment the count of this word in the database
 				*self.data.entry(word)
 					.or_insert(HashMap::new())
 					.entry(self.counter)
@@ -92,6 +104,8 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
 	fn deserialize<D>(deserializer: D) -> Result<Frequency<'static>, D::Error>
 		where D: Deserializer<'de>,
 	{
+		// implementation following https://serde.rs/deserialize-struct.html
+
 		#[derive(serde::Deserialize)]
 		#[serde(field_identifier, rename_all = "lowercase")]
    	enum Field { Data, Counter }

@@ -3,7 +3,9 @@ use xml::reader::{EventReader, XmlEvent};
 use std::fs::File;
 use lazy_static::lazy_static;
 
-// Generated using https://github.com/brkalmar/fetch_mediawiki_configuration
+/// Contains config parameters for wikitext
+///
+/// Generated using [fetch_mediawiki_configuration](https://github.com/brkalmar/fetch_mediawiki_configuration)
 const CONFIGPARAMS: parse_wiki_text::ConfigurationSource = parse_wiki_text::ConfigurationSource {
 	category_namespaces : & ["category"], 
 	extension_tags : & ["categorytree" , "ce" , "charinsert" , "chem" , "gallery" , "graph" , "hiero" , "imagemap" , "indicator" , "inputbox" , "langconvert" , "mapframe" , "maplink" , "math" , "nowiki" , "poem" , "pre" , "ref" , "references" , "score" , "section" , "source" , "syntaxhighlight" , "templatedata" , "templatestyles" , "timeline"],
@@ -15,6 +17,7 @@ const CONFIGPARAMS: parse_wiki_text::ConfigurationSource = parse_wiki_text::Conf
 };
 
 lazy_static! {
+	/// Static parser for wiki text.
 	static ref CONFIG: parse_wiki_text::Configuration = parse_wiki_text::Configuration::new(&CONFIGPARAMS);
 }
 
