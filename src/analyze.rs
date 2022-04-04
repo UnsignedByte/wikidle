@@ -21,16 +21,18 @@ impl Display for ReadOnlyError {
   }
 }
 
+type Dict<'a> = &'a HashSet<String>;
+
 /// Struct representing the frequency analysis of words in the database.
 pub struct Frequency<'a> {
 	data: HashMap<String, HashMap<usize, u16>>,
-	dict: Option<&'a HashSet<String>>,
+	dict: Option<Dict<'a>>,
 	counter: usize,
 }
 
 impl<'a> Frequency<'a> {
 	/// Create a new empty frequency data table with a dictionary.
-	pub fn new ( dict: &'a HashSet<String> ) -> Frequency {
+	pub fn new ( dict: Dict ) -> Frequency {
 		Frequency {
 			data: HashMap::new(),
 			dict: Some(dict),
@@ -44,7 +46,7 @@ impl<'a> Frequency<'a> {
 	}
 
 	/// Make a frequency table writable by loading a dict
-	pub fn load_dict ( &mut self, dict: &'a HashSet<String> ) {
+	pub fn load_dict ( &mut self, dict: Dict<'a> ) {
 		self.dict = Some(dict);
 	}
 
