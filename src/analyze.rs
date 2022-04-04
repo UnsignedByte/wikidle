@@ -5,6 +5,7 @@ use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::collections::{ HashMap, HashSet };
 use regex::Regex;
 use lazy_static::lazy_static;
+use log::{debug, trace};
 
 lazy_static! {
 	/// Static regex for parsing words.
@@ -64,6 +65,8 @@ impl<'a> Frequency<'a> {
 
 		self.counter = self.counter + 1;
 
+		debug!("Loading article {}:\n\t{} chars.", self.counter, article.len());
+
 		for word in WORD.captures_iter(&article) {
 			let word = &word[0];
 			let word = word.to_lowercase();
@@ -76,6 +79,8 @@ impl<'a> Frequency<'a> {
 					.or_insert(0) += 1;
 			}
 		};
+
+		debug!("Finished article {}.", self.counter);
 
 		Ok(())
 	}

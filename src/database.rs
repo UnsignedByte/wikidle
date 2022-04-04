@@ -1,7 +1,9 @@
 use parse_wiki_text;
 use xml::reader::{EventReader, XmlEvent};
 use std::fs::File;
+use std::io::BufReader;
 use lazy_static::lazy_static;
+use log::{debug, trace};
 
 /// Contains config parameters for wikitext
 ///
@@ -26,14 +28,14 @@ type Article = xml::reader::Result<String>;
 
 /// An iterator over the database
 pub struct Articles {
-	reader: EventReader<File>,
+	reader: EventReader<BufReader<File>>,
 }
 
 impl Articles {
 	/// Creates a new iterator over the articles.
-	fn new(i: File) -> Articles {
+	fn new(f: File) -> Articles {
 		Articles {
-			reader: EventReader::new(i)
+			reader: EventReader::new(BufReader::new(f))
 		}
 	}
 
@@ -97,8 +99,6 @@ impl Articles {
 				
 				let mut s: String = String::from("");
 
-				// dbg!(&n);
-
 				match n {
 					Text { value: v, .. } => s += v,
 
@@ -145,16 +145,20 @@ impl Articles {
 
 				s
 			}
+			
+			debug!("Parsing Wikitext");
 			let o = CONFIG.parse(&p);
 
 			let mut s: String = String::from("");
 
-			// dbg!(&o);
+			debug!("Parsed Wikitext");
 
 			for node in &o.nodes {
 				s = format!("{}\n{}", s, node_as_plaintext(node, p));
 				// dbg!(&s);
 			};
+
+			debug!("Converted to str");
 
 			s
 		};
@@ -162,20 +166,26 @@ impl Articles {
 
 		let mut p: String = String::from("");
 
+		debug!("Searching for page end");
+
+		let mut i = 0;
+
 		while let Ok(e) = self.reader.next() {
+			i += 1;
 
 			match e {
 				XmlEvent::EndElement { name: n } if n.local_name.as_str() == "page" => {
-					// dbg!(&p);
 					return wikitext_as_plaintext(&p)
 				},
-				XmlEvent::Whitespace(s) |
 				XmlEvent::Characters(s) |
 				XmlEvent::CData(s) => {
-					// dbg!(&s);
-					p += s.as_str()
+					trace!("searching: parsing plaintext data length {}", s.len());
+					p = format!("{}{}", p, s);
 				},
-				_ => (),
+				_ => {
+					trace!("searching: discarding node {}", i);
+					()
+				},
 			}
 		}
 
@@ -227,9 +237,9 @@ impl Database<'_> {
 	/// # Examples
 	///
 	/// ```
-  /// let db = database::Database::new("wiki.xml").unwrap();
-  /// 
-  /// assert(db.fname == "wiki.xml");
+	/// let db = database::Database::new("wiki.xml").unwrap();
+	/// 
+	/// assert(db.fname == "wiki.xml");
 	/// ```
 	pub fn new(f: &str) -> Result<Database, std::io::Error> {
 		Ok(Database {
