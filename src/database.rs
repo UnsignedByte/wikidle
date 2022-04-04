@@ -1,9 +1,7 @@
-/**
- * Parses wikitext into plaintext articles as a stream.
- */
 use parse_wiki_text;
 use xml::reader::{EventReader, XmlEvent};
 use std::fs::File;
+use lazy_static::lazy_static;
 
 // Generated using https://github.com/brkalmar/fetch_mediawiki_configuration
 const CONFIGPARAMS: parse_wiki_text::ConfigurationSource = parse_wiki_text::ConfigurationSource {
@@ -16,21 +14,27 @@ const CONFIGPARAMS: parse_wiki_text::ConfigurationSource = parse_wiki_text::Conf
 	redirect_magic_words : & ["redirect"], 
 };
 
+lazy_static! {
+	static ref CONFIG: parse_wiki_text::Configuration = parse_wiki_text::Configuration::new(&CONFIGPARAMS);
+}
+
+/// Type representing an item of Articles
 type Article = xml::reader::Result<String>;
 
+/// An iterator over the database
 pub struct Articles {
 	reader: EventReader<File>,
-	config: parse_wiki_text::Configuration,
 }
 
 impl Articles {
+	/// Creates a new iterator over the articles.
 	fn new(i: File) -> Articles {
 		Articles {
-			config: parse_wiki_text::Configuration::new(&CONFIGPARAMS),
 			reader: EventReader::new(i)
 		}
 	}
 
+	/// Converts the next article in the article iterator to a string
 	fn article_as_str (&mut self) -> String {
 		let wikitext_as_plaintext = |p: &String| -> String {
 			fn node_as_plaintext(n: &parse_wiki_text::Node, p: &str) -> String {
@@ -138,7 +142,7 @@ impl Articles {
 
 				s
 			}
-			let o = self.config.parse(&p);
+			let o = CONFIG.parse(&p);
 
 			let mut s: String = String::from("");
 
@@ -178,6 +182,13 @@ impl Articles {
 
 impl Iterator for Articles {
 	type Item = Article;
+
+	/// The next article in the database.
+	///
+	/// Returns:
+	/// * `Some(Ok(s))` where `s` is the plaintext string containing the article
+	/// * `Some(Err(s))` when there was an error reading the XML.
+	/// * `None` if the end of the document has been reached
 	fn next(&mut self) -> Option<Self::Item> {
 
 		match self.reader.next() {
@@ -186,6 +197,7 @@ impl Iterator for Articles {
 					name: n,
 					..
 				} if n.local_name.as_str() == "page" => Some(Ok(self.article_as_str())),
+				XmlEvent::EndDocument => None,
 				_ => self.next()
 			},
 			Err(x) => Some(Err(x))
@@ -193,12 +205,29 @@ impl Iterator for Articles {
 	}
 }
 
+/// Represents the full wikipedia database.
 pub struct Database<'a> {
-	fname: &'a str,
+	pub fname: &'a str,
 	articles: Articles,
 }
 
 impl Database<'_> {
+	/// Creates a database reading from the specified file path.
+	///
+	/// # Arguments
+	/// * `f` - file name to read from.
+	///
+	/// # Returns
+	/// * `Ok(d)` with a database `d`.
+	/// * `Err(e)` with an IO error `e` if the file could not be opened.
+	///
+	/// # Examples
+	///
+	/// ```
+  /// let db = database::Database::new("wiki.xml").unwrap();
+  /// 
+  /// assert(db.fname == "wiki.xml");
+	/// ```
 	pub fn new(f: &str) -> Result<Database, std::io::Error> {
 		Ok(Database {
 			fname: f,

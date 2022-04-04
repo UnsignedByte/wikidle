@@ -9,3 +9,5 @@ edition = "2021"
 
 parse_wiki_text = "0.1.5"
 xml-rs = "0.8.4"
+regex = "1.5.5"
+lazy_static = "1.4.0"

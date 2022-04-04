@@ -1,4 +1,9 @@
+use std::io::{BufRead, BufReader};
+use std::fs::File;
+use std::collections::HashSet;
+
 mod database;
+mod analyze;
 
 fn main() {
     let s = "enwiki-20220101-pages-articles-multistream";
@@ -8,13 +13,24 @@ fn main() {
 
     let mut a = db.into_iter();
 
-    let mut x = String::from("Wiki:\n\n");
+    let mut dict: HashSet<String> = HashSet::new();
 
-    for _ in 0..2 {
-        x += a.next().unwrap().unwrap().as_str();
+    let df = "data/words";
+    let df = File::open(df).expect(&format!("Missing {:?} file.", df));
+    let df = BufReader::new(df);
+
+    for l in df.lines() {
+        dict.insert(l.unwrap().to_lowercase());
     }
 
-    println!("{}", x);
+
+    let mut fa = analyze::Frequency::new(&dict);
+
+    fa.insert(a.next().unwrap().unwrap());
+    
+    fa.insert(a.next().unwrap().unwrap());
+
+    dbg!(fa);
 }
 
 
