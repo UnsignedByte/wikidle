@@ -38,9 +38,14 @@ impl<'a> Frequency<'a> {
 		}
 	}
 
-	/// Load a read-only frequency data table from a file.
-	pub fn load ( data: HashMap<String, HashMap<usize, u16>>, counter: usize ) -> Frequency<'a> {
+	/// Load a read-only frequency data table from data.
+	fn load ( data: HashMap<String, HashMap<usize, u16>>, counter: usize ) -> Frequency<'static> {
 		Frequency { data, counter, dict: None }
+	}
+
+	/// Make a frequency table writable by loading a dict
+	pub fn load_dict ( &mut self, dict: &'a HashSet<String> ) {
+		self.dict = Some(dict);
 	}
 
 	/// Parses a string to find all occurrences of valid words.

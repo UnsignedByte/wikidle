@@ -42,7 +42,11 @@ mod test {
 
     // Assert that the data of both databases are equal.
     assert_eq!(fa, fad);
-
+    // not writable
     assert_eq!(fad.insert(String::from("")), Err(analyze::ReadOnlyError));
+
+    fad.load_dict(&dict);
+    // now it should be writable
+    assert_eq!(fad.insert(String::from("")), Ok( () ));
 	}
 }
