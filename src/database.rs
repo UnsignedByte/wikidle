@@ -146,19 +146,19 @@ impl Articles {
 				s
 			}
 			
-			debug!("Parsing Wikitext");
+			// debug!("Parsing Wikitext");
 			let o = CONFIG.parse(&p);
 
 			let mut s: String = String::from("");
 
-			debug!("Parsed Wikitext");
+			// debug!("Parsed Wikitext");
 
 			for node in &o.nodes {
 				s = format!("{}\n{}", s, node_as_plaintext(node, p));
 				// dbg!(&s);
 			};
 
-			debug!("Converted to str");
+			// debug!("Converted to str");
 
 			s
 		};
@@ -166,26 +166,16 @@ impl Articles {
 
 		let mut p: String = String::from("");
 
-		debug!("Searching for page end");
-
-		let mut i = 0;
+		// debug!("Searching for page end");
 
 		while let Ok(e) = self.reader.next() {
-			i += 1;
-
 			match e {
 				XmlEvent::EndElement { name: n } if n.local_name.as_str() == "page" => {
 					return wikitext_as_plaintext(&p)
 				},
 				XmlEvent::Characters(s) |
-				XmlEvent::CData(s) => {
-					trace!("searching: parsing plaintext data length {}", s.len());
-					p = format!("{}{}", p, s);
-				},
-				_ => {
-					trace!("searching: discarding node {}", i);
-					()
-				},
+				XmlEvent::CData(s) => p = format!("{}{}", p, s),
+				_ => (),
 			}
 		}
 

@@ -65,7 +65,7 @@ impl<'a> Frequency<'a> {
 
 		self.counter = self.counter + 1;
 
-		debug!("Loading article {}:\n\t{} chars.", self.counter, article.len());
+		// debug!("Loading article {}:\n\t{} chars.", self.counter, article.len());
 
 		for word in WORD.captures_iter(&article) {
 			let word = &word[0];
@@ -80,7 +80,7 @@ impl<'a> Frequency<'a> {
 			}
 		};
 
-		debug!("Finished article {}.", self.counter);
+		// debug!("Finished article {}.", self.counter);
 
 		Ok(())
 	}

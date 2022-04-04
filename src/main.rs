@@ -1,4 +1,4 @@
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, BufWriter};
 use std::fs::File;
 use std::collections::HashSet;
 use log::{info};
@@ -38,6 +38,10 @@ fn main() {
         c += 1;
         info!(target: "app::basic", "Parsed article {}", c);
 
+        if c % 1000 == 0 {
+            println!("> Article {} parsed", c);
+        }
+
         if c > 100_000 { break; }
     }
 
@@ -45,7 +49,7 @@ fn main() {
     std::fs::create_dir_all(fw).unwrap();
     let fw = &format!("{}/frequency.dat", fw);
 
-    let fw = File::create(fw).unwrap();
+    let fw = BufWriter::new(File::create(fw).unwrap());
 
     bincode::serialize_into(fw, &fa).unwrap();
 }
