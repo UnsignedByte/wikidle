@@ -1,35 +1,34 @@
-use std::io::{BufRead, BufReader, BufWriter};
+use crate::database::read::Database;
+use std::io::{BufWriter, BufRead, BufReader};
+use bzip2::read::{MultiBzDecoder};
 use std::fs::File;
 use std::collections::HashSet;
-use log::{info};
+use log::{info,debug};
+use const_format::formatcp;
+use database::frequency::*;
 
 mod database;
-mod analyze;
+
+const DBNAME: &str = "enwiki-20220101-pages-articles-multistream";
+const DBDATA: &str = formatcp!("data/{}/{0}.xml", DBNAME);
+const DBINDEX: &str = formatcp!("data/{}/{0}-index.txt", DBNAME);
 
 fn main() {
     log4rs::init_file("log/config.yaml", Default::default()).unwrap();
 
     info!("Initiated Logger");
 
-    let s = "enwiki-20220101-pages-articles-multistream";
-
-    let s = format!("data/{}/{0}.xml", s);
-    let db = database::Database::new(&s).unwrap();
+    let db = File::open(format!("{}.bz2", DBDATA)).unwrap();
+    // let db = BufReader::new(db);
+    let db = MultiBzDecoder::new(db);
+    let db = BufReader::new(db);
+    let db = Database::new(db);
      
     let mut a = db.into_iter();
 
-    let mut dict: HashSet<String> = HashSet::new();
+    let dict = load_dict("data/words").unwrap();
 
-    let df = "data/words";
-    let df = File::open(df).expect(&format!("Missing {:?} file.", df));
-    let df = BufReader::new(df);
-
-    for l in df.lines() {
-        dict.insert(l.unwrap().to_lowercase());
-    }
-
-
-    let mut fa = analyze::Frequency::new(&dict);
+    let mut fa = database::frequency::Frequency::new(String::from("results/frequency.dat"), &dict).unwrap();
 
     let mut c = 0;
     while let Some(e) = a.next() {
@@ -38,16 +37,12 @@ fn main() {
         c += 1;
         info!(target: "app::basic", "Parsed article {}", c);
 
-        if c % 1000 == 0 {
-            println!("> Article {} parsed", c);
-        }
-
         if c > 100_000 { break; }
     }
 
     let fw = "results";
     std::fs::create_dir_all(fw).unwrap();
-    let fw = &format!("{}/frequency.dat", fw);
+    let fw = &format!("{}/frequency-index.dat", fw);
 
     let fw = BufWriter::new(File::create(fw).unwrap());
 

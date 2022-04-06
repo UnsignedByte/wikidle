@@ -1,7 +1,6 @@
-use parse_wiki_text;
 use xml::reader::{EventReader, XmlEvent};
-use std::fs::File;
-use std::io::BufReader;
+
+use std::io::{BufRead};
 use lazy_static::lazy_static;
 use log::{debug, trace};
 
@@ -27,15 +26,15 @@ lazy_static! {
 type Article = xml::reader::Result<String>;
 
 /// An iterator over the database
-pub struct Articles {
-	reader: EventReader<BufReader<File>>,
+pub struct Articles<T: BufRead> {
+	reader: EventReader<T>,
 }
 
-impl Articles {
+impl<T: BufRead> Articles<T> {
 	/// Creates a new iterator over the articles.
-	fn new(f: File) -> Articles {
+	fn new(f: T) -> Articles<T> {
 		Articles {
-			reader: EventReader::new(BufReader::new(f))
+			reader: EventReader::new(f)
 		}
 	}
 
@@ -183,7 +182,7 @@ impl Articles {
 	}
 }
 
-impl Iterator for Articles {
+impl<T: BufRead> Iterator for Articles<T> {
 	type Item = Article;
 
 	/// The next article in the database.
@@ -193,6 +192,7 @@ impl Iterator for Articles {
 	/// * `Some(Err(s))` when there was an error reading the XML.
 	/// * `None` if the end of the document has been reached
 	fn next(&mut self) -> Option<Self::Item> {
+		debug!("Reading article.");
 
 		match self.reader.next() {
 			Ok(x) => match x {
@@ -209,12 +209,11 @@ impl Iterator for Articles {
 }
 
 /// Represents the full wikipedia database.
-pub struct Database<'a> {
-	pub fname: &'a str,
-	articles: Articles,
+pub struct Database<T: BufRead> {
+	articles: Articles<T>,
 }
 
-impl Database<'_> {
+impl<T: BufRead> Database<T> {
 	/// Creates a database reading from the specified file path.
 	///
 	/// # Arguments
@@ -231,26 +230,24 @@ impl Database<'_> {
 	/// 
 	/// assert(db.fname == "wiki.xml");
 	/// ```
-	pub fn new(f: &str) -> Result<Database, std::io::Error> {
-		Ok(Database {
-			fname: f,
-			articles: Articles::new(File::open(f)?),
-		})
+	pub fn new(f: T) -> Database<T> {
+		Database {
+			articles: Articles::new(f),
+		}
 	}
 }
 
-impl IntoIterator for Database<'_> {
+impl<T: BufRead> IntoIterator for Database<T> {
 	type Item = Article;
-	type IntoIter = Articles;
+	type IntoIter = Articles<T>;
 	fn into_iter(self) -> Self::IntoIter {
 		self.articles
 	}
 }
 
-impl std::fmt::Debug for Database<'_> {
+impl<T: BufRead> std::fmt::Debug for Database<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Database")
-         .field("fname", &self.fname)
          .finish()
     }
 }
