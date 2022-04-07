@@ -1,5 +1,5 @@
 /// Analyzes the wikipedia database
-use core::fmt::{self, Formatter, Debug, Display};
+use core::fmt::{Formatter, Debug};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::collections::{ HashMap };
@@ -8,34 +8,12 @@ use lazy_static::lazy_static;
 use std::io::{BufWriter, BufReader, BufRead, Seek};
 use std::fs::File;
 use log::{debug, trace};
+use super::error::*;
 
 lazy_static! {
 	/// Static regex for parsing words.
 	static ref WORD: Regex = Regex::new(r"\b[^\s]+\b").unwrap();
 }
-
-/// Error returned when attempting to write to a frequency table without a dictionary.
-#[derive(Debug)]
-pub enum ErrorKind {
-	ReadOnly,
-	Serialization(bincode::Error),
-	Io(std::io::Error),
-}
-
-pub type Error = Box<ErrorKind>;
-
-impl Display for Error {
-	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-		let s = match &**self {
-    	ErrorKind::ReadOnly => String::from("Attempted to write to read-only frequency database."),
-    	ErrorKind::Serialization(x) => format!("Error during serialization: {}", x),
-    	ErrorKind::Io(x) => format!("IO Error: {}", x)
-    };
-    write!(f, "{}", s)
-  }
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 type Dict = HashMap<String, u32>;
 
@@ -62,20 +40,20 @@ pub struct Frequency<'a> {
 
 impl<'a> Frequency<'a> {
 	/// Create a new empty frequency data table with a dictionary.
-	pub fn new ( fname: String, dict: &'a Dict ) -> Result<Frequency<'a>> {
+	pub fn new ( fname: &str, dict: &'a Dict ) -> Result<Frequency<'a>> {
 		Ok(Frequency {
-			out: BufWriter::new(File::create(&fname).map_err(ErrorKind::Io)?),
-			fname,
+			out: BufWriter::new(File::create(fname).map_err(ErrorKind::Io)?),
+			fname: fname.to_owned(),
 			index: Vec::new(),
 			dict: Some(dict),
 		})
 	}
 
 	/// Load a read-only frequency data table from data.
-	fn load ( fname: String, index: Vec<u64> ) -> Result<Frequency<'static>> {
+	fn load ( fname: &str, index: Vec<u64> ) -> Result<Frequency<'static>> {
 		Ok(Frequency {
-			out: BufWriter::new(File::create(&fname).map_err(ErrorKind::Io)?),
-			fname,
+			out: BufWriter::new(File::create(fname).map_err(ErrorKind::Io)?),
+			fname: fname.to_owned(),
 			index,
 			dict: None
 		})
@@ -103,6 +81,7 @@ impl<'a> Frequency<'a> {
 			.map_err(ErrorKind::Io)?);
 
 		debug!("Loading article {} with {} chars.", self.index.len(), article.len());
+		trace!(target: "app::dump", "raw article:\n{}", article);
 
 		for word in WORD.captures_iter(&article) {
 			let word = &word[0];
@@ -121,7 +100,7 @@ impl<'a> Frequency<'a> {
 
 		debug!("Database size {}.", self.out.stream_position().map_err(ErrorKind::Io)?);
 
-		bincode::serialize_into(&mut self.out, &data);
+		bincode::serialize_into(&mut self.out, &data).map_err(ErrorKind::Serialization)?;
 
 		Ok(())
 	}
@@ -181,7 +160,7 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
 				let index = seq.next_element()?
 					.ok_or_else(|| de::Error::invalid_length(0, &self))?;
 
-				Ok(Frequency::load(fname.clone(), index)
+				Ok(Frequency::load(&fname, index)
 					.map_err(|_| de::Error::invalid_value(
 						de::Unexpected::Str(&fname),
 						&"A valid filepath."
@@ -215,7 +194,7 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
 
       	let fname: String = fname.ok_or_else(|| de::Error::missing_field("fname'"))?;
       	let index = index.ok_or_else(|| de::Error::missing_field("index'"))?;
-				Ok(Frequency::load(fname.clone(), index)
+				Ok(Frequency::load(&fname, index)
 					.map_err(|_| de::Error::invalid_value(
 						de::Unexpected::Str(&fname),
 						&"A valid filepath."

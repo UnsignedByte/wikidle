@@ -35,3 +35,8 @@ loggers:
     appenders:
       - stdout
       - basic
+  app::dump:
+    level: off
+    appenders:
+      - verbose
+    additive: false
