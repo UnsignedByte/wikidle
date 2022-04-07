@@ -25,14 +25,16 @@ lazy_static! {
 	/// Static parser for wiki text.
 	pub static ref CONFIG: parse_wiki_text::Configuration = parse_wiki_text::Configuration::new(&CONFIGPARAMS);
 
-	static ref OPEN_BRACE: Regex = Regex::new(r"\{\{").unwrap();
-	static ref CLOSE_BRACE: Regex = Regex::new(r"\}\}").unwrap();
+	static ref DOUBLE_OPEN_CURLY: Regex = Regex::new(r"\{\{").unwrap();
+	static ref DOUBLE_CLOSE_CURLY: Regex = Regex::new(r"\}\}").unwrap();
+	static ref OPEN_BAR_CURLY: Regex = Regex::new(r"\{\|").unwrap();
+	static ref CLOSE_BAR_CURLY: Regex = Regex::new(r"\|\}[^}]").unwrap();
 }
 
 // Type representing a page.
 #[derive(Debug,PartialEq,Clone)]
 pub struct Page {
-	pub namespace: i8,
+	pub namespace: i32,
 	pub title: String,
 	pub text: String
 }
@@ -161,14 +163,16 @@ fn wikitext_as_plaintext (p: &str) -> String {
 	
 	trace!(target: "app::dump", "Parsing Wikitext {:?}", p);
 
-	let diff = OPEN_BRACE.captures_iter(&p).count()
-		- CLOSE_BRACE.captures_iter(&p).count();
+	let diff = DOUBLE_OPEN_CURLY.captures_iter(&p).count() as i64
+		- DOUBLE_CLOSE_CURLY.captures_iter(&p).count() as i64;
+	let diff2 = (OPEN_BAR_CURLY.captures_iter(&p).count() as i64
+		- CLOSE_BAR_CURLY.captures_iter(&p).count() as i64).abs();
 
-	// let diff = diff.abs();
-
-	// If more than 6 unclosed double open brace "{{" are found, don't parse the wikitext.
-	if diff > 6 {
-		warn!("Skipping article due to {} mismatched braces.", diff);
+	// If more than 6 unclosed double open brace "{{"
+	// or more than 6 unclosed "{|" or "|}" are found, don't parse the wikitext.
+	// Prevents parse_wiki_text from rewind()ing and hanging.
+	if diff > 6 || diff2 > 6 {
+		warn!("Skipping article due to {} mismatched \"{{{{\" and {} \"{{| |}}\".", diff, diff2);
 
 		return p.to_owned();
 	}
@@ -239,7 +243,7 @@ impl<T: BufRead> Iterator for Articles<T> {
 										.ok_or_else(|| ErrorKind::XML)?,
 									namespace: namespace
 										.ok_or_else(|| ErrorKind::XML)?
-										.parse::<i8>()
+										.parse::<i32>()
 										.map_err(|_| ErrorKind::XML)?
 								})
 							}
@@ -282,7 +286,7 @@ impl<T: BufRead> Iterator for Articles<T> {
 				XmlEvent::EndDocument => None,
 				_ => self.next()
 			},
-			Err(x) => Some(Err(ErrorKind::XML.into()))
+			Err(_) => Some(Err(ErrorKind::XML.into()))
 		}
 
 	}

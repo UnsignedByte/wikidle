@@ -1,10 +1,10 @@
 use crate::database::read::Database;
-use std::io::{BufWriter, BufRead, BufReader, Seek, SeekFrom, Read};
+use std::io::{BufWriter, BufRead, BufReader, Seek, SeekFrom};
 use bzip2::bufread::{MultiBzDecoder, BzDecoder};
 use std::fs::File;
-use std::collections::HashSet;
-use log::{info,debug};
-use regex::{Regex, Captures};
+
+use log::{info};
+use regex::{Regex};
 use const_format::formatcp;
 use database::frequency::*;
 
@@ -23,7 +23,7 @@ fn main() {
 
     // db.seek(SeekFrom::Start(ind[ARTICLEID].0)).unwrap();
 
-    // db.seek(SeekFrom::Start(2594977051)).unwrap();
+    // db.seek(SeekFrom::Start(4522421248)).unwrap();
 
     let db = BufReader::new(db);
     let db = MultiBzDecoder::new(db);

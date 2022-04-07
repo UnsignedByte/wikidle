@@ -67,28 +67,7 @@ mod test {
 	}
 
     #[test]
-    /// Test bzip2 multistream
-    fn bzip2_read () {
-
-        use bzip2::bufread::{BzDecoder, MultiBzDecoder};
-
-        let dat = File::open(format!("{}.bz2", DBDATA)).unwrap();
-        let ind = File::open(format!("{}.bz2", DBINDEX)).unwrap();
-
-        let dat = BufReader::new(dat);
-        let ind = BufReader::new(ind);
-
-        let dat = MultiBzDecoder::new(dat);
-        let mut ind = BzDecoder::new(ind);
-
-        let mut buf = String::from("");
-
-        ind.read_to_string(&mut buf).unwrap();
-
-        debug!("Read index: {}", buf);
-    }
-
-    #[test]
+    /// Load the index file into memory.
     fn index_read () {
         let indexmap: Regex = Regex::new(r"^(\d+):(\d+):(.+)$").unwrap();
 
@@ -113,5 +92,15 @@ mod test {
         const ARTICLEID: usize = 921235 + 70611;
 
         println!("Parsing starting at article {} id {}, {:?}, byte {}", ARTICLEID, ind[ARTICLEID].1, ind[ARTICLEID].2, ind[ARTICLEID].0);
+    }
+
+    #[test]
+    /// Test parse_wiki_text
+    fn wikitext () {
+        let mut tmp = File::open("tmp.log").unwrap();
+        let mut contents = String::new();
+        tmp.read_to_string(&mut contents).unwrap();
+
+        println!("{:?}", database::read::CONFIG.parse(&contents));
     }
 }
