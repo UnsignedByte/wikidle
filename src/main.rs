@@ -23,7 +23,7 @@ fn main() {
 
     // db.seek(SeekFrom::Start(ind[ARTICLEID].0)).unwrap();
 
-    // db.seek(SeekFrom::Start(2369839923)).unwrap();
+    // db.seek(SeekFrom::Start(2594977051)).unwrap();
 
     let db = BufReader::new(db);
     let db = MultiBzDecoder::new(db);
@@ -41,14 +41,11 @@ fn main() {
 
     let mut c = 0;
     while let Some(e) = a.next() {
-        fa.insert(e.unwrap()).unwrap();
+        let page = e.unwrap();
+        fa.insert(page.text).unwrap();
 
         c += 1;
-        info!(target: "app::basic", "Parsed article {}", c);
-
-        if c % 1000 == 0 {
-            println!("Parsed article {}", c);
-        }
+        info!(target: "app::basic", "Parsed article {}: {}", c, page.title);
 
         // if c > 100_000 { break; }
     }

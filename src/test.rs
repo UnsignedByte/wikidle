@@ -28,7 +28,7 @@ mod test {
 
         let mut c = 0;
         while let Some(e) = a.next() {
-            fa.insert(e.unwrap()).unwrap();
+            fa.insert(e.unwrap().text).unwrap();
 
             c += 1;
             info!(target: "app::basic", "Parsed article {}", c);
@@ -92,12 +92,6 @@ mod test {
     fn index_read () {
         let indexmap: Regex = Regex::new(r"^(\d+):(\d+):(.+)$").unwrap();
 
-        let mut tmp = File::open("tmp.log").unwrap();
-        let mut contents = String::new();
-        tmp.read_to_string(&mut contents).unwrap();
-
-        info!("{:?}", database::read::CONFIG.parse(&contents));
-
         let ind = File::open(format!("{}.bz2", DBINDEX)).unwrap();
         let ind = BufReader::new(ind);
         let ind = BzDecoder::new(ind);
@@ -116,8 +110,8 @@ mod test {
             })
             .collect();
 
-        const ARTICLEID: usize = 865000;
+        const ARTICLEID: usize = 921235 + 70611;
 
-        info!("Parsing starting at article {}, byte {}", ARTICLEID, ind[ARTICLEID].0);
+        println!("Parsing starting at article {} id {}, {:?}, byte {}", ARTICLEID, ind[ARTICLEID].1, ind[ARTICLEID].2, ind[ARTICLEID].0);
     }
 }

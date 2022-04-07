@@ -2,9 +2,11 @@ use xml::reader::{EventReader, XmlEvent};
 
 use std::io::{BufRead};
 use lazy_static::lazy_static;
-use log::{debug, trace};
+use log::{debug, warn, trace};
 
 use super::error::*;
+
+use regex::Regex;
 
 /// Contains config parameters for wikitext
 ///
@@ -22,10 +24,18 @@ const CONFIGPARAMS: parse_wiki_text::ConfigurationSource = parse_wiki_text::Conf
 lazy_static! {
 	/// Static parser for wiki text.
 	pub static ref CONFIG: parse_wiki_text::Configuration = parse_wiki_text::Configuration::new(&CONFIGPARAMS);
+
+	static ref OPEN_BRACE: Regex = Regex::new(r"\{\{").unwrap();
+	static ref CLOSE_BRACE: Regex = Regex::new(r"\}\}").unwrap();
 }
 
-/// Type representing an item of Articles
-type Article = Result<String>;
+// Type representing a page.
+#[derive(Debug,PartialEq,Clone)]
+pub struct Page {
+	pub namespace: i8,
+	pub title: String,
+	pub text: String
+}
 
 /// An iterator over the database
 pub struct Articles<T: BufRead> {
@@ -42,7 +52,7 @@ impl<T: BufRead> Articles<T> {
 }
 
 /// Converts the next article in the article iterator to a string
-fn wikitext_as_plaintext (p: &String) -> String {
+fn wikitext_as_plaintext (p: &str) -> String {
 	fn node_as_plaintext(n: &parse_wiki_text::Node, p: &str) -> String {
 		use parse_wiki_text::Node::*;
 
@@ -150,7 +160,20 @@ fn wikitext_as_plaintext (p: &String) -> String {
 	}
 	
 	trace!(target: "app::dump", "Parsing Wikitext {:?}", p);
-	let o = CONFIG.parse(&p);
+
+	let diff = OPEN_BRACE.captures_iter(&p).count()
+		- CLOSE_BRACE.captures_iter(&p).count();
+
+	// let diff = diff.abs();
+
+	// If more than 6 unclosed double open brace "{{" are found, don't parse the wikitext.
+	if diff > 6 {
+		warn!("Skipping article due to {} mismatched braces.", diff);
+
+		return p.to_owned();
+	}
+
+	let o = CONFIG.parse(p);
 
 	let mut s: String = String::from("");
 
@@ -167,7 +190,7 @@ fn wikitext_as_plaintext (p: &String) -> String {
 }
 
 impl<T: BufRead> Iterator for Articles<T> {
-	type Item = Article;
+	type Item = Result<Page>;
 
 	/// The next article in the database.
 	///
@@ -177,12 +200,6 @@ impl<T: BufRead> Iterator for Articles<T> {
 	/// * `None` if the end of the document has been reached
 	fn next(&mut self) -> Option<Self::Item> {
 		debug!("Reading article.");
-
-		struct Page {
-			namespace: i8,
-			title: String,
-			text: String
-		}
 
 		fn article_to_page<T: BufRead>(reader: &mut EventReader<T>) -> Result<Page> {
 
@@ -255,11 +272,10 @@ impl<T: BufRead> Iterator for Articles<T> {
 					};
 
 					match x {
-						Page { namespace: 0, title: n, text: t } => {
-							debug!("Parsing article {}", n);
-							
-							Some(Ok(wikitext_as_plaintext(&t)))
-						},
+						Page { namespace: 0, text: t, .. } => Some(Ok(Page {
+							text: wikitext_as_plaintext(&t),
+							..x
+						})),
 						_ => self.next()
 					}
 				},
@@ -302,7 +318,7 @@ impl<T: BufRead> Database<T> {
 }
 
 impl<T: BufRead> IntoIterator for Database<T> {
-	type Item = Article;
+	type Item = Result<Page>;
 	type IntoIter = Articles<T>;
 	fn into_iter(self) -> Self::IntoIter {
 		self.articles
