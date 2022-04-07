@@ -34,6 +34,7 @@ lazy_static! {
 // Type representing a page.
 #[derive(Debug,PartialEq,Clone)]
 pub struct Page {
+	pub id: usize,
 	pub namespace: i32,
 	pub title: String,
 	pub text: String
@@ -207,12 +208,62 @@ impl<T: BufRead> Iterator for Articles<T> {
 
 		fn article_to_page<T: BufRead>(reader: &mut EventReader<T>) -> Result<Page> {
 
-			let mut text: Option<String> = None;
-			let mut title: Option<String> = None;
-			let mut namespace: Option<String> = None;
-			let mut trash = String::new();
+			enum TagType {
+				Close,
+				Open
+			}
 
-			let mut consumer: &mut String = &mut trash;
+			fn capture_tag<T: BufRead>(reader: &mut EventReader<T>, name: &str) -> Result<String> {
+				fn discard_whitespace<T: BufRead>(reader: &mut EventReader<T>) -> Result<XmlEvent> {
+					match reader.next().map_err(|_| ErrorKind::XML)? {
+						XmlEvent::Whitespace(_) => discard_whitespace(reader),
+						x => Ok(x)
+					}
+				}
+
+				fn match_tag(tag: XmlEvent, name: &str, tt: TagType) -> bool {
+					match tt {
+						TagType::Open => {
+							matches!(tag,
+								XmlEvent::StartElement { name: n, .. }
+									if n.local_name.as_str() == name
+							)
+						},
+						TagType::Close => {
+							matches!(tag,
+								XmlEvent::EndElement { name: n }
+									if n.local_name.as_str() == name
+							)
+						}
+					}
+				}
+
+				// Open title tag
+				if !match_tag(discard_whitespace(reader)?,
+					name, TagType::Open) { return Err(ErrorKind::XML.into()) }
+
+				let s = if let XmlEvent::Characters(s) = reader.next().map_err(|_| ErrorKind::XML)? {
+						s
+				} else {
+					return Err(ErrorKind::XML.into());
+				};
+
+				// Close title tag
+				if !match_tag(discard_whitespace(reader)?,
+					name, TagType::Close) { return Err(ErrorKind::XML.into()) }
+
+				Ok(s)
+			}
+
+			let title = capture_tag(reader, "title")?;
+			let ns = capture_tag(reader, "ns")?
+				.parse::<i32>().map_err(|_| ErrorKind::XML)?;
+			let id = capture_tag(reader, "id")?
+				.parse::<usize>().map_err(|_| ErrorKind::XML)?;
+
+			let mut text: Option<String> = None;
+
+			let mut consumer: Option<&mut String> = None;
 
 			// debug!("Searching for page end");
 
@@ -221,9 +272,7 @@ impl<T: BufRead> Iterator for Articles<T> {
 					XmlEvent::StartElement { name: n, .. } => {
 						let n = n.local_name;
 						match n.as_str() {
-							"title" => consumer = title.get_or_insert(String::new()),
-							"text" => consumer = text.get_or_insert(String::new()),
-							"ns" => consumer = namespace.get_or_insert(String::new()),
+							"text" => consumer = Some(text.get_or_insert(String::new())),
 							"page" => return Err(ErrorKind::XML.into()),
 							_ => (),
 						}
@@ -231,20 +280,15 @@ impl<T: BufRead> Iterator for Articles<T> {
 					XmlEvent::EndElement { name: n } => {
 						let n = n.local_name;
 						match n.as_str() {
-							"title" |
-							"text" |
-							"ns" => consumer = &mut trash,
+							"text" => consumer = None,
 							"page" => {
 								trace!(target: "app::dump", "Page end found.");
 								return Ok(Page {
 									text: text
 										.ok_or_else(|| ErrorKind::XML)?,
-									title: title
-										.ok_or_else(|| ErrorKind::XML)?,
-									namespace: namespace
-										.ok_or_else(|| ErrorKind::XML)?
-										.parse::<i32>()
-										.map_err(|_| ErrorKind::XML)?
+									title,
+									namespace: ns,
+									id,
 								})
 							}
 							_ => ()
@@ -254,7 +298,12 @@ impl<T: BufRead> Iterator for Articles<T> {
 					XmlEvent::Characters(s) |
 					XmlEvent::CData(s) => {
 						trace!(target: "app::dump", "Concatenating {}", s);
-						*consumer = format!("{}{}", *consumer, s)
+						consumer = if let Some(c) = consumer {
+							*c = format!("{}{}", *c, s);
+							Some(c)
+						} else {
+							consumer
+						}
 					},
 					_ => (),
 				}

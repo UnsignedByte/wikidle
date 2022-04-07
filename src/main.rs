@@ -14,16 +14,10 @@ const DBNAME: &str = "enwiki-20220101-pages-articles-multistream";
 const DBDATA: &str = formatcp!("data/{}/{0}.xml", DBNAME);
 const DBINDEX: &str = formatcp!("data/{}/{0}-index.txt", DBNAME);
 
-fn main() {
-    log4rs::init_file("log/config.yaml", Default::default()).unwrap();
-
-    info!("Initiated Logger");
-
+fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Frequency<'a>{
     let mut db = File::open(format!("{}.bz2", DBDATA)).unwrap();
 
-    // db.seek(SeekFrom::Start(ind[ARTICLEID].0)).unwrap();
-
-    // db.seek(SeekFrom::Start(4522421248)).unwrap();
+    db.seek(SeekFrom::Start(start)).unwrap();
 
     let db = BufReader::new(db);
     let db = MultiBzDecoder::new(db);
@@ -35,28 +29,35 @@ fn main() {
      
     let mut a = db.into_iter();
 
-    let dict = load_dict("data/words").unwrap();
+    let path = format!("results/{namespace}");
+    std::fs::create_dir_all(&path).unwrap();
 
-    let mut fa = database::frequency::Frequency::new("results/frequency.dat", &dict).unwrap();
+    let mut fa = database::frequency::Frequency::new(&format!("{path}/data.dat"), &dict).unwrap();
 
-    let mut c = 0;
     while let Some(e) = a.next() {
         let page = e.unwrap();
         fa.insert(page.text).unwrap();
 
-        c += 1;
-        info!(target: "app::basic", "Parsed article {}: {}", c, page.title);
-
-        // if c > 100_000 { break; }
+        info!(target: "app::basic", "Parsed article {}: {}", page.id, page.title);
     }
 
-    let fw = "results";
-    std::fs::create_dir_all(fw).unwrap();
-    let fw = &format!("{}/frequency-index.dat", fw);
+    let fw = &format!("{path}/index.dat");
 
     let fw = BufWriter::new(File::create(fw).unwrap());
 
     bincode::serialize_into(fw, &fa).unwrap();
+
+    fa
+}
+
+fn main() {
+    log4rs::init_file("log/config.yaml", Default::default()).unwrap();
+
+    info!("Initiated Logger");
+
+    let dict = load_dict("data/words").unwrap();
+
+    let fa = gen_word_frequency("frequency", &dict, 0);
 }
 
 

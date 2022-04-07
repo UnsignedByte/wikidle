@@ -15,7 +15,7 @@ lazy_static! {
 	static ref WORD: Regex = Regex::new(r"\b[^\s]+\b").unwrap();
 }
 
-type Dict = HashMap<String, u32>;
+pub type Dict = HashMap<String, u32>;
 
 pub fn load_dict(fname: &str) -> Result<Dict> {
   let mut dict: Dict = HashMap::new();
