@@ -203,7 +203,7 @@ impl<T: BufRead> Iterator for Articles<T> {
 							"title" => consumer = title.get_or_insert(String::new()),
 							"text" => consumer = text.get_or_insert(String::new()),
 							"ns" => consumer = namespace.get_or_insert(String::new()),
-							"page" => return Err(Box::new(ErrorKind::XML)),
+							"page" => return Err(ErrorKind::XML.into()),
 							_ => (),
 						}
 					},
@@ -239,7 +239,7 @@ impl<T: BufRead> Iterator for Articles<T> {
 				}
 			}
 
-			Err(Box::new(ErrorKind::XML))
+			Err(ErrorKind::XML.into())
 		}
 
 
@@ -266,7 +266,7 @@ impl<T: BufRead> Iterator for Articles<T> {
 				XmlEvent::EndDocument => None,
 				_ => self.next()
 			},
-			Err(x) => Some(Err(Box::new(ErrorKind::XML)))
+			Err(x) => Some(Err(ErrorKind::XML.into()))
 		}
 
 	}

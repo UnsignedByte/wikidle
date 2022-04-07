@@ -19,38 +19,7 @@ fn main() {
 
     info!("Initiated Logger");
 
-    let indexmap: Regex = Regex::new(r"^(\d+):(\d+):(.+)$").unwrap();
-
     let mut db = File::open(format!("{}.bz2", DBDATA)).unwrap();
-
-    // let mut tmp = File::open("tmp.log").unwrap();
-    // let mut contents = String::new();
-    // tmp.read_to_string(&mut contents).unwrap();
-
-    // info!("{:?}", database::read::CONFIG.parse(&contents));
-
-    // let ind = File::open(DBINDEX).unwrap();
-    // let ind = File::open(format!("{}.bz2", DBINDEX)).unwrap();
-    // let ind = BufReader::new(ind);
-    // let ind = BzDecoder::new(ind);
-    // let ind = BufReader::new(ind);
-
-    // let ind: Vec<(u64, u32, String)> = ind.lines()
-    //     .map(|e| e.unwrap())
-    //     .map(|e| {
-    //         let s = indexmap.captures_iter(&e).next().unwrap();
-
-    //         (
-    //             s[1].parse::<u64>().unwrap(), 
-    //             s[2].parse::<u32>().unwrap(), 
-    //             s[3].to_owned()
-    //         )
-    //     })
-    //     .collect();
-
-    // const ARTICLEID: usize = 865000;
-
-    // info!("Parsing starting at article {}, byte {}", ARTICLEID, ind[ARTICLEID].0);
 
     // db.seek(SeekFrom::Start(ind[ARTICLEID].0)).unwrap();
 

@@ -1,12 +1,12 @@
 use core::fmt::{self, Display, Formatter};
 
 /// Error type enum.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ErrorKind {
 	ReadOnly,
 	XML,
-	Serialization(bincode::Error),
-	Io(std::io::Error),
+	Serialization,
+	Io,
 }
 
 /// Type representing an error emitted by the database module
@@ -17,8 +17,8 @@ impl Display for Error {
 		let s = match &**self {
     	ErrorKind::ReadOnly => String::from("Attempted to write to read-only frequency database."),
     	ErrorKind::XML => String::from("XML Error."),
-    	ErrorKind::Serialization(x) => format!("Error during serialization: {}", x),
-    	ErrorKind::Io(x) => format!("IO Error: {}", x)
+    	ErrorKind::Serialization => format!("Error during serialization."),
+    	ErrorKind::Io => format!("IO Error.")
     };
     write!(f, "{}", s)
   }

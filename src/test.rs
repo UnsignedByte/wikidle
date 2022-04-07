@@ -6,32 +6,45 @@ mod test {
 	#[test]
     /// Test database serialization and deserialization.
 	fn database_serialize_deserialize() {
-        let db = database::Database::new(DBDATA).unwrap();
-    	 
+        let mut db = File::open(format!("{}.bz2", DBDATA)).unwrap();
+
+        // db.seek(SeekFrom::Start(ind[ARTICLEID].0)).unwrap();
+
+        // db.seek(SeekFrom::Start(2369839923)).unwrap();
+
+        let db = BufReader::new(db);
+        let db = MultiBzDecoder::new(db);
+        // let db = File::open(DBDATA).unwrap();
+        let db = BufReader::new(db);
+        let db = Database::new(db);
+
+
+         
         let mut a = db.into_iter();
 
-        let mut dict: HashSet<String> = HashSet::new();
+        let dict = load_dict("data/words").unwrap();
 
-        let df = "data/words";
-        let df = File::open(df).expect(&format!("Missing {:?} file.", df));
-        let df = BufReader::new(df);
+        let mut fa = database::frequency::Frequency::new("results/frequency.dat", &dict).unwrap();
 
-        for l in df.lines() {
-            dict.insert(l.unwrap().to_lowercase());
+        let mut c = 0;
+        while let Some(e) = a.next() {
+            fa.insert(e.unwrap()).unwrap();
+
+            c += 1;
+            info!(target: "app::basic", "Parsed article {}", c);
+
+            if c % 1000 == 0 {
+                println!("Parsed article {}", c);
+            }
+
+            // if c > 100_000 { break; }
         }
 
-
-        let mut fa = analyze::Frequency::new(&dict);
-
-        for _ in 1..5 {
-        	fa.insert(a.next().unwrap().unwrap()).unwrap();
-        }
-
-        let fon = "results/_test";
+        let fon = "results";
         std::fs::create_dir_all(fon).unwrap();
-        let fon = &format!("{}/frequency.dat", fon);
+        let fon = &format!("{}/frequency-index.dat", fon);
 
-        let fw = File::create(fon).unwrap();
+        let fw = BufWriter::new(File::create(fon).unwrap());
 
         bincode::serialize_into(fw, &fa).unwrap();
 
@@ -43,9 +56,12 @@ mod test {
         // Assert that the data of both databases are equal.
         assert_eq!(fa, fad);
         // not writable
-        assert_eq!(fad.insert(String::from("")), Err(analyze::ReadOnlyError));
+        assert_eq!(
+            fad.insert(String::from("")),
+            Err(database::error::ErrorKind::ReadOnly.into())
+        );
 
-        fad.load_dict(&dict);
+        fad.set_dict(&dict);
         // now it should be writable
         assert_eq!(fad.insert(String::from("")), Ok( () ));
 	}
@@ -62,7 +78,7 @@ mod test {
         let dat = BufReader::new(dat);
         let ind = BufReader::new(ind);
 
-        let mut dat = MultiBzDecoder::new(dat);
+        let dat = MultiBzDecoder::new(dat);
         let mut ind = BzDecoder::new(ind);
 
         let mut buf = String::from("");
@@ -70,5 +86,38 @@ mod test {
         ind.read_to_string(&mut buf).unwrap();
 
         debug!("Read index: {}", buf);
+    }
+
+    #[test]
+    fn index_read () {
+        let indexmap: Regex = Regex::new(r"^(\d+):(\d+):(.+)$").unwrap();
+
+        let mut tmp = File::open("tmp.log").unwrap();
+        let mut contents = String::new();
+        tmp.read_to_string(&mut contents).unwrap();
+
+        info!("{:?}", database::read::CONFIG.parse(&contents));
+
+        let ind = File::open(format!("{}.bz2", DBINDEX)).unwrap();
+        let ind = BufReader::new(ind);
+        let ind = BzDecoder::new(ind);
+        let ind = BufReader::new(ind);
+
+        let ind: Vec<(u64, u32, String)> = ind.lines()
+            .map(|e| e.unwrap())
+            .map(|e| {
+                let s = indexmap.captures_iter(&e).next().unwrap();
+
+                (
+                    s[1].parse::<u64>().unwrap(), 
+                    s[2].parse::<u32>().unwrap(), 
+                    s[3].to_owned()
+                )
+            })
+            .collect();
+
+        const ARTICLEID: usize = 865000;
+
+        info!("Parsing starting at article {}, byte {}", ARTICLEID, ind[ARTICLEID].0);
     }
 }

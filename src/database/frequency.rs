@@ -20,11 +20,11 @@ type Dict = HashMap<String, u32>;
 pub fn load_dict(fname: &str) -> Result<Dict> {
   let mut dict: Dict = HashMap::new();
 
-	let df = File::open(fname).map_err(ErrorKind::Io)?;
+	let df = File::open(fname).map_err(|_| ErrorKind::Io)?;
   let df = BufReader::new(df);
 
   for (i, l) in df.lines().enumerate() {
-      dict.entry(l.map_err(ErrorKind::Io)?.to_lowercase()).or_insert(i as u32);
+      dict.entry(l.map_err(|_| ErrorKind::Io)?.to_lowercase()).or_insert(i as u32);
   }
 
   Ok(dict)
@@ -42,7 +42,7 @@ impl<'a> Frequency<'a> {
 	/// Create a new empty frequency data table with a dictionary.
 	pub fn new ( fname: &str, dict: &'a Dict ) -> Result<Frequency<'a>> {
 		Ok(Frequency {
-			out: BufWriter::new(File::create(fname).map_err(ErrorKind::Io)?),
+			out: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
 			fname: fname.to_owned(),
 			index: Vec::new(),
 			dict: Some(dict),
@@ -52,7 +52,7 @@ impl<'a> Frequency<'a> {
 	/// Load a read-only frequency data table from data.
 	fn load ( fname: &str, index: Vec<u64> ) -> Result<Frequency<'static>> {
 		Ok(Frequency {
-			out: BufWriter::new(File::create(fname).map_err(ErrorKind::Io)?),
+			out: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
 			fname: fname.to_owned(),
 			index,
 			dict: None
@@ -78,7 +78,7 @@ impl<'a> Frequency<'a> {
 		let mut data: HashMap<u32,u16> = HashMap::new();
 
 		self.index.push(self.out.stream_position()
-			.map_err(ErrorKind::Io)?);
+			.map_err(|_| ErrorKind::Io)?);
 
 		debug!("Loading article {} with {} chars.", self.index.len(), article.len());
 		trace!(target: "app::dump", "raw article:\n{}", article);
@@ -94,13 +94,13 @@ impl<'a> Frequency<'a> {
 		};
 
 		let u = bincode::serialized_size(&data)
-			.map_err(ErrorKind::Serialization)?;
+			.map_err(|_| ErrorKind::Serialization)?;
 
 		debug!("Finished article {}, writing {} bytes.", self.index.len(), u);
 
-		debug!("Database size {}.", self.out.stream_position().map_err(ErrorKind::Io)?);
+		debug!("Database size {}.", self.out.stream_position().map_err(|_| ErrorKind::Io)?);
 
-		bincode::serialize_into(&mut self.out, &data).map_err(ErrorKind::Serialization)?;
+		bincode::serialize_into(&mut self.out, &data).map_err(|_| ErrorKind::Serialization)?;
 
 		Ok(())
 	}
