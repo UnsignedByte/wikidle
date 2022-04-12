@@ -58,7 +58,7 @@ mod test {
         // not writable
         assert_eq!(
             fad.insert(String::from("")),
-            Err(database::error::ErrorKind::ReadOnly.into())
+            Err(database::error::ErrorKind::MissingDict.into())
         );
 
         fad.set_dict(&dict);

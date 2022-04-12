@@ -5,7 +5,7 @@ use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::collections::{ HashMap };
 use regex::Regex;
 use lazy_static::lazy_static;
-use std::io::{BufWriter, BufReader, BufRead, Seek};
+use std::io::{BufWriter, BufReader, BufRead, Seek, SeekFrom};
 use std::fs::File;
 use log::{debug, trace};
 use super::error::*;
@@ -33,7 +33,8 @@ pub fn load_dict(fname: &str) -> Result<Dict> {
 /// Struct representing the frequency analysis of words in the database.
 pub struct Frequency<'a> {
 	fname: String,
-	out: BufWriter<File>,
+	writer: BufWriter<File>,
+	reader: BufReader<File>,
 	index: Vec<u64>,
 	dict: Option<&'a Dict>,
 }
@@ -42,7 +43,8 @@ impl<'a> Frequency<'a> {
 	/// Create a new empty frequency data table with a dictionary.
 	pub fn new ( fname: &str, dict: &'a Dict ) -> Result<Frequency<'a>> {
 		Ok(Frequency {
-			out: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
+			writer: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
+			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
 			fname: fname.to_owned(),
 			index: Vec::new(),
 			dict: Some(dict),
@@ -50,12 +52,13 @@ impl<'a> Frequency<'a> {
 	}
 
 	/// Load a read-only frequency data table from data.
-	fn load ( fname: &str, index: Vec<u64> ) -> Result<Frequency<'static>> {
+	fn deserialize ( fname: &str, index: Vec<u64> ) -> Result<Frequency<'static>> {
 		Ok(Frequency {
-			out: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
+			writer: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
+			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
 			fname: fname.to_owned(),
 			index,
-			dict: None
+			dict: None,
 		})
 	}
 
@@ -70,14 +73,14 @@ impl<'a> Frequency<'a> {
 	/// * `article`: A string representing the article to parse for words.
 	///
 	/// Returns
-	/// * `Err(ErrorKind::ReadOnly)` if the dictionary is undefined,
+	/// * `Err(ErrorKind::MissingDict)` if the dictionary is undefined,
 	/// 	usually occurring if the data has been loaded from file.
 	/// * `Ok( () )` if parsed properly
 	pub fn insert ( &mut self, article: String ) -> Result<()> {
-		let dict = self.dict.ok_or_else(|| ErrorKind::ReadOnly)?;
+		let dict = self.dict.ok_or_else(|| ErrorKind::MissingDict)?;
 		let mut data: HashMap<u32,u16> = HashMap::new();
 
-		self.index.push(self.out.stream_position()
+		self.index.push(self.writer.stream_position()
 			.map_err(|_| ErrorKind::Io)?);
 
 		debug!("Loading article {} with {} chars.", self.index.len(), article.len());
@@ -98,11 +101,39 @@ impl<'a> Frequency<'a> {
 
 		debug!("Finished article {}, writing {} bytes.", self.index.len(), u);
 
-		debug!("Database size {}.", self.out.stream_position().map_err(|_| ErrorKind::Io)?);
+		debug!("Database size {}.", self.writer.stream_position().map_err(|_| ErrorKind::Io)?);
 
-		bincode::serialize_into(&mut self.out, &data).map_err(|_| ErrorKind::Serialization)?;
+		bincode::serialize_into(&mut self.writer, &data).map_err(|_| ErrorKind::Serialization)?;
 
 		Ok(())
+	}
+
+	// Writes the serializer to a file organized by word
+	pub fn load( &mut self ) -> Result<HashMap<u32, HashMap<u32,u16>>> {
+
+		let mut map: HashMap<u32, HashMap<u32,u16>> = HashMap::new();
+
+		self.reader.seek(SeekFrom::End(0))
+			.map_err(|_| ErrorKind::Io)?;
+
+		for id in 0..self.index.len() {
+			let start = self.index[id];
+
+			self.reader.seek(SeekFrom::Start(start))
+				.map_err(|_| ErrorKind::Io)?;
+
+			let dmap: HashMap<u32,u16> = bincode::deserialize_from(&mut self.reader)
+				.map_err(|_| ErrorKind::Serialization)?;
+
+			for (word, count) in dmap.iter() {
+				*map.entry(*word)
+					.or_insert(HashMap::new())
+					.entry(id as u32)
+					.or_insert(0) = *count;
+			}
+		}
+
+		Ok(map)
 	}
 }
 
@@ -160,7 +191,7 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
 				let index = seq.next_element()?
 					.ok_or_else(|| de::Error::invalid_length(0, &self))?;
 
-				Ok(Frequency::load(&fname, index)
+				Ok(Frequency::deserialize(&fname, index)
 					.map_err(|_| de::Error::invalid_value(
 						de::Unexpected::Str(&fname),
 						&"A valid filepath."
@@ -194,7 +225,7 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
 
       	let fname: String = fname.ok_or_else(|| de::Error::missing_field("fname'"))?;
       	let index = index.ok_or_else(|| de::Error::missing_field("index'"))?;
-				Ok(Frequency::load(&fname, index)
+				Ok(Frequency::deserialize(&fname, index)
 					.map_err(|_| de::Error::invalid_value(
 						de::Unexpected::Str(&fname),
 						&"A valid filepath."

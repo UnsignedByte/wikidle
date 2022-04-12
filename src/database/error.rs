@@ -3,7 +3,8 @@ use core::fmt::{self, Display, Formatter};
 /// Error type enum.
 #[derive(Debug, PartialEq)]
 pub enum ErrorKind {
-	ReadOnly,
+	MissingDict,
+	InvalidWord,
 	XML,
 	Serialization,
 	Io,
@@ -15,7 +16,8 @@ pub type Error = Box<ErrorKind>;
 impl Display for Error {
 	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
 		let s = match &**self {
-    	ErrorKind::ReadOnly => String::from("Attempted to write to read-only frequency database."),
+			ErrorKind::InvalidWord => String::from("Asked for word that was not part of the dictionary."),
+    	ErrorKind::MissingDict => String::from("Frequency database missing dictionary."),
     	ErrorKind::XML => String::from("XML Error."),
     	ErrorKind::Serialization => format!("Error during serialization."),
     	ErrorKind::Io => format!("IO Error.")
