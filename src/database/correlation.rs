@@ -9,6 +9,7 @@ use std::io::{BufWriter, BufReader, Write, Read, Seek, SeekFrom};
 use std::fs::File;
 use log::{debug, trace};
 use super::error::*;
+use std::sync::{Arc,RwLock,RwLockWriteGuard,RwLockReadGuard};
 
 /// Structure storing corelation data
 pub struct Correlation {
@@ -59,8 +60,6 @@ impl Correlation {
 
 		trace!(target: "app::dump", "Most common word appeared {} times on avg.", *nds.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.));
 
-		// let pool = ThreadPool::new(4);
-
 		let sum = ndk.iter()
 			.map(|k| dat.get(k).unwrap())
 			.enumerate()
@@ -83,13 +82,48 @@ impl Correlation {
 				.iter().sum()
 			).collect();
 
+		let ndk = Arc::new(ndk);
+		let nds = Arc::new(nds);
+		let sum = Arc::new(sum);
+		let sum2 = Arc::new(sum2);
+
 		// println!("{nds:?}\n{sum:?}\n{sum2:?}");
 
-		for i in 0 .. nd.len() {
-			let a = dat.get(&ndk[i]).unwrap();
+		let pool: Option<ThreadPool> = match nd.len() {
+			0..=1000 => None,
+			_ => Some(ThreadPool::new(4))
+		};
 
-			for j in 0 .. i {
-				let b = dat.get(&ndk[j]).unwrap(); // b freq data
+		for i in 0 .. nd.len() {
+			let a = Arc::new(dat.get(&ndk[i]).unwrap().clone());
+
+			type SharedDat = (usize, usize, Arc<Vec<(u32,u16)>>, Arc<Vec<f64>>, Arc<Vec<f64>>, Arc<Vec<f64>>);
+
+			let shared: Arc<SharedDat> = Arc::new( (
+				i,
+				len,
+				a.clone(),
+				nds.clone(),
+				sum.clone(),
+				sum2.clone(),
+			) );
+
+			let calc = |j: usize, buf: Arc<RwLock<f64>>, shared: Arc<SharedDat>, b: Vec<(u32,u16)>| {
+				let (
+					i,
+					len,
+					a,
+					nds,
+					sum,
+					sum2,
+				) = (
+					shared.0,
+					shared.1,
+					&*shared.2,
+					&*shared.3,
+					&*shared.4,
+					&*shared.5,
+				);
 
 				// calculate numerator ignoring intersection.
 				let mut num = sum[i] * -nds[j] + sum[j] * -nds[i];
@@ -128,11 +162,42 @@ impl Correlation {
 				// pearsons r correlation
 				let r = num / (sum2[i] * sum2[j]).sqrt();
 				trace!(target: "app::dump", "{}:{} {}:{};\t{}", i, a.len(), j, b.len(), r);
-				println!("{}:{} {}:{};\t{}", i, a.len(), j, b.len(), r);
+				// println!("{}:{} {}:{};\t{}", i, a.len(), j, b.len(), r);
 
-				w.write(&r.to_be_bytes())
-					.map_err(|_| ErrorKind::Io)?;
+				*buf.write().unwrap() = r;
+			};
+
+			let mut buf: Vec<Arc<RwLock<f64>>> = Vec::new();
+
+			for j in 0 .. i {
+
+				let shared = Arc::clone(&shared);
+				buf.push(Arc::new(RwLock::new(0.)));
+				let slice = Arc::clone(&buf[j]);
+
+				let b: Vec<(u32, u16)> = dat.get(&ndk[j]).unwrap().clone(); // b freq data
+
+				let cc = move || calc(j, slice, shared, b);
+				match pool {
+					Some(ref p) => {
+						p.execute(cc)
+					},
+					None => cc (),
+				};
 			}
+
+			if let Some(ref p) = pool {
+				p.join();
+			}
+
+			let buf: Vec<u8> = buf.iter()
+				.map(|e| *e.read().unwrap())
+				.map(|e| e.to_be_bytes())
+				.flatten()
+				.collect();
+
+			w.write(&buf)
+				.map_err(|_| ErrorKind::Io)?;
 		}
 
 		Ok(Correlation {
@@ -164,7 +229,7 @@ impl Correlation {
 
 		let ind = a * (a - 1) / 2 + b;
 
-		println!("{}, {}, {}", a, b, ind);
+		// println!("{}, {}, {}", a, b, ind);
 
 		self.reader.seek(SeekFrom::Start(ind * 8)).ok()?;
 
