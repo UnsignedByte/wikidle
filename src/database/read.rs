@@ -36,16 +36,16 @@ lazy_static! {
 pub type Dict = HashMap<String, u32>;
 
 pub fn load_dict(fname: &str) -> Result<Dict> {
-  let mut dict: Dict = HashMap::new();
+	let mut dict: Dict = HashMap::new();
 
 	let df = File::open(fname).map_err(|_| ErrorKind::Io)?;
-  let df = BufReader::new(df);
+	let df = BufReader::new(df);
 
-  for (i, l) in df.lines().enumerate() {
-      dict.entry(l.map_err(|_| ErrorKind::Io)?.to_lowercase()).or_insert(i as u32);
-  }
+	for (i, l) in df.lines().enumerate() {
+		dict.entry(l.map_err(|_| ErrorKind::Io)?.to_lowercase()).or_insert(i as u32);
+	}
 
-  Ok(dict)
+	Ok(dict)
 }
 
 // Type representing a page.

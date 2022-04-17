@@ -16,6 +16,7 @@ mod database;
 const DBNAME: &str = "enwiki-20220101-pages-articles-multistream";
 const DBDATA: &str = formatcp!("data/{}/{0}.xml", DBNAME);
 const DBINDEX: &str = formatcp!("data/{}/{0}-index.txt", DBNAME);
+const EPSILON: f64 = 1e-12;
 
 fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Correlation{
     let path = format!("results/{namespace}");
@@ -92,13 +93,13 @@ fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Corre
             let dat = (fa.load().unwrap(), fa.len());
 
             let fw = BufWriter::new(File::create(&raw).unwrap());
-            bincode::serialize_into(fw, &dat);
+            bincode::serialize_into(fw, &dat).unwrap();
 
             dat
         }
     };
 
-    info!("Generating correlation data...")
+    info!("Generating correlation data...");
     Correlation::new(&dat.0, dat.1, &cpath, &dict).unwrap()
 }
 

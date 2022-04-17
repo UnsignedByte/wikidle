@@ -5,7 +5,7 @@ use crate::{Dict, Frequency};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use core::fmt::{Formatter, Debug};
-use std::io::{BufWriter, BufReader, Write, BufRead, Seek, SeekFrom};
+use std::io::{BufWriter, BufReader, Write, Read, Seek, SeekFrom};
 use std::fs::File;
 use log::{debug, trace};
 use super::error::*;
@@ -34,9 +34,16 @@ impl Correlation {
 
 		let mut w = BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?);
 
-		let ndk: Vec<u32> = nd
-			.keys()
-			.map(|k| *dict.get(k).unwrap())
+		let mut ndk: Vec<(&String, &u32)> = nd
+			.iter()
+			.collect();
+		
+		ndk.sort_by(|(_, a), (_, b)| (*a).cmp(*b));
+		
+		let ndk: Vec<u32> = ndk
+			.iter()
+			.map(|(k, _)| k)
+			.map(|k| *dict.get(*k).unwrap())
 			.collect();
 
 		// calculate sums 
@@ -57,19 +64,26 @@ impl Correlation {
 		let sum = ndk.iter()
 			.map(|k| dat.get(k).unwrap())
 			.enumerate()
-			.map(|(i, a)| a.iter()
+			.map(|(i, a)| (a.iter()
 				.map(|(_, c)| *c as f64 - nds[i])
-				.collect::<Vec<f64>>()
+				.collect::<Vec<f64>>(), a.len())
 			);
 
 		let sum2: Vec<f64> = sum
 			.clone()
-			.map(|e| e.iter()
+			.enumerate()
+			.map(|(i, (e, l))| e.iter()
 				.map(|n| n * n)
-				.sum()
+				.sum::<f64>()
+				+ (len - l) as f64 * nds[i] * nds[i]
 			).collect();
 
-		let sum: Vec<f64> = sum.map(|e| e.iter().sum()).collect();
+		let sum: Vec<f64> = sum
+			.map(|(e, _)| e
+				.iter().sum()
+			).collect();
+
+		// println!("{nds:?}\n{sum:?}\n{sum2:?}");
 
 		for i in 0 .. nd.len() {
 			let a = dat.get(&ndk[i]).unwrap();
@@ -78,7 +92,8 @@ impl Correlation {
 				let b = dat.get(&ndk[j]).unwrap(); // b freq data
 
 				// calculate numerator ignoring intersection.
-				let mut num = sum[i] * nds[j] + sum2[j] * nds[i];
+				let mut num = sum[i] * -nds[j] + sum[j] * -nds[i];
+				let mut nc = 0; // number of shared articles
 
 				let (mut ii, mut jj) = (0,0);
 
@@ -90,9 +105,10 @@ impl Correlation {
 						let (ac, bc) = (ac as f64, bc as f64);
 						let (da, db) = (ac - nds[i], bc - nds[j]);
 
-						num -= da * nds[j];
-						num -= db * nds[i];
+						num += da * nds[j];
+						num += db * nds[i];
 						num += da * db;
+						nc += 1;
 					}
 
 					if aid <= bid {
@@ -104,9 +120,15 @@ impl Correlation {
 					}
 				}
 
+				let nc = (len - a.len() - b.len() + nc) as f64;
+
+				let num = num + nc * nds[i] * nds[j];
+				// println!("{}\t{}", nc, num);
+
 				// pearsons r correlation
 				let r = num / (sum2[i] * sum2[j]).sqrt();
-				trace!(target: "app::dump", "Word {} and {} corr {}", i, j, r);
+				trace!(target: "app::dump", "{}:{} {}:{};\t{}", i, a.len(), j, b.len(), r);
+				println!("{}:{} {}:{};\t{}", i, a.len(), j, b.len(), r);
 
 				w.write(&r.to_be_bytes())
 					.map_err(|_| ErrorKind::Io)?;
@@ -126,6 +148,35 @@ impl Correlation {
 			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
 			dict
 		})
+	}
+
+	pub fn corr(&mut self, a: &str, b: &str) -> Option<f64> {
+		if a == b {
+			return Some(1.)
+		}
+
+		let a = *self.dict.get(&a.to_lowercase())? as u64;
+		let b = *self.dict.get(&b.to_lowercase())? as u64;
+
+		let (a, b) = if a < b { (b, a) } else { (a, b) };
+
+		// a should be > b
+
+		let ind = a * (a - 1) / 2 + b;
+
+		println!("{}, {}, {}", a, b, ind);
+
+		self.reader.seek(SeekFrom::Start(ind * 8)).ok()?;
+
+		let mut buf: [u8; 8] = [0; 8];
+
+		self.reader.read_exact(&mut buf).ok()?;
+
+		Some(f64::from_be_bytes(buf))
+	}
+
+	pub fn dict<'a>(&'a self) -> &'a Dict {
+		&self.dict
 	}
 }
 

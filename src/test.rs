@@ -7,7 +7,7 @@ mod test {
 	#[test]
     /// Test database serialization and deserialization.
 	fn database_serialize_deserialize() {
-        let mut db = File::open(format!("{}.bz2", DBDATA)).unwrap();
+        let db = File::open(format!("{}.bz2", DBDATA)).unwrap();
 
         // db.seek(SeekFrom::Start(ind[ARTICLEID].0)).unwrap();
 
@@ -103,5 +103,38 @@ mod test {
         tmp.read_to_string(&mut contents).unwrap();
 
         println!("{:?}", database::read::CONFIG.parse(&contents));
+    }
+
+    #[test]
+    /// Correlation test
+    fn corr () {
+        let dict = load_dict("data/words").unwrap();
+        let dat: HashMap<u32,Vec<(u32,u16)>> = HashMap::from([
+            (0, vec![(0, 1), (1, 1), (9, 2)]),
+            (1, vec![(0, 1), (1, 1), (9, 2)]),
+            (2, vec![(9, 1)]),
+            (3, vec![(5, 1)])
+        ]);
+
+        let mut c = Correlation::new(&dat, 10, "results/_test/corr.dat", &dict).unwrap();
+
+        println!("{:?}", c.dict());
+
+        println!("{:?}", c.corr("A","A's"));
+
+        assert!(
+            (c.corr("A","A's").unwrap_or(0.) - 1.).abs()
+            < EPSILON
+        );
+
+        assert!(
+            (c.corr("AMD","A").unwrap_or(0.) - 0.804030252207).abs()
+            < EPSILON
+        );
+
+        assert!(
+            (c.corr("AMD's","AMD").unwrap_or(0.) - -0.111111111111).abs()
+            < EPSILON
+        );
     }
 }
