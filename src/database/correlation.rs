@@ -12,7 +12,7 @@ use log::{debug, trace};
 use super::error::*;
 use std::sync::{Arc,RwLock};
 
-/// Structure storing corelation data
+/// Structure storing correlation data
 pub struct Correlation {
 	fname: String,
 	reader: BufReader<File>,
@@ -20,6 +20,7 @@ pub struct Correlation {
 }
 
 impl Correlation {
+	/// Generates a new correlation database from raw exported frequency data.
 	pub fn new(mut dat: HashMap<u32, Vec<(u32, u16)>>, len: usize, fname: &str, dict: &Dict) -> Result<Correlation> {
 
 		debug!(target: "app::dump", "Current dict size {}", dict.len());
@@ -114,7 +115,6 @@ impl Correlation {
 
 		debug!(target: "app::dump", "Generated hashsets");
 
-		let uniq = Arc::new(uniq);
 		let nds = Arc::new(nds);
 		let sum = Arc::new(sum);
 		let sum2 = Arc::new(sum2);
@@ -235,7 +235,8 @@ impl Correlation {
 		})
 	}
 
-	pub fn deserialize(fname: &str, dict: Dict) -> Result<Correlation> {
+	/// Used to load a correlation database from an existing file
+	fn deserialize(fname: &str, dict: Dict) -> Result<Correlation> {
 		Ok(Correlation {
 			fname: fname.to_owned(),
 			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
@@ -243,6 +244,7 @@ impl Correlation {
 		})
 	}
 
+	/// Returns the pearson's r correlation between [a] and [b].
 	pub fn corr(&mut self, a: &str, b: &str) -> Option<f64> {
 		if a == b {
 			return Some(1.)
@@ -283,7 +285,6 @@ impl Debug for Correlation {
 	fn fmt(&self, f: &mut Formatter) -> std::result::Result<(), std::fmt::Error> {
 		f.debug_struct("Correlation")
 			.field("fname", &self.fname)
-			.field("dict", &self.dict)
 			.finish()
 	}
 }
