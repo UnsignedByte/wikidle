@@ -45,62 +45,67 @@ impl Correlation {
 			.map(|d| 
 				d.iter()
 					.map(|(_, v)| *v as f64)
-					.sum()
+					.sum::<f64>()
 				/ len as f64
 			)
 			.collect();
 
 		trace!(target: "app::dump", "Most common word appeared {} times on avg.", *nds.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap_or(&0.));
 
-		const WORKERS: usize = 4;
-		let pool = ThreadPool::new(4);
+		// let pool = ThreadPool::new(4);
+
+		let sum = ndk.iter()
+			.map(|k| dat.get(k).unwrap())
+			.enumerate()
+			.map(|(i, a)| a.iter()
+				.map(|(_, c)| *c as f64 - nds[i])
+				.collect::<Vec<f64>>()
+			);
+
+		let sum2: Vec<f64> = sum
+			.clone()
+			.map(|e| e.iter()
+				.map(|n| n * n)
+				.sum()
+			).collect();
+
+		let sum: Vec<f64> = sum.map(|e| e.iter().sum()).collect();
 
 		for i in 0 .. nd.len() {
-			let am = dat.get(&ndk[i]).unwrap();
-
-			// calculate the naive one-sided (a- mean a) sums and (a - mean a)^2
-			let asum = am.iter()
-				.enumerate()
-				.map(|(j, (_, c))| *c as f64 - nds[j]);
-
-			let asum2 = asum
-				.clone()
-				.map(|e| e * e)
-				.sum();
-
-			let asum = asum.sum();
+			let a = dat.get(&ndk[i]).unwrap();
 
 			for j in 0 .. i {
-				let bm = dat.get(&ndk[j]).unwrap(); // b freq data
+				let b = dat.get(&ndk[j]).unwrap(); // b freq data
 
-				let ak: HashSet<u32> = am.keys().map(|k| *k).collect();
-				let bk: HashSet<u32> = bm.keys().map(|k| *k).collect();
+				// calculate numerator ignoring intersection.
+				let mut num = sum[i] * nds[j] + sum2[j] * nds[i];
 
-				// all the unique keys of both.
-				let ks: Vec<&u32> = ak.union(&bk).collect();
+				let (mut ii, mut jj) = (0,0);
 
-				let fl = freq.len() as f64; // number of articles
-				let kzc = fl - ks.len() as f64; // number of articles where neither word appears
+				while ii < a.len() && jj < b.len() {
+					let (aid, ac) = a[ii];
+					let (bid, bc) = b[jj];
 
-				trace!(target: "app::dump", "Found {} articles where the words never appear.", kzc);
+					if aid == bid {
+						let (ac, bc) = (ac as f64, bc as f64);
+						let (da, db) = (ac - nds[i], bc - nds[j]);
 
-				// (sum (a * article count - sum a) * (b * article count - sum b))
-				let mut num = nds[i] * nds[j] * kzc;
-
-				// denominator elements; there are [kzc] articles where the word appears 0 times.
-				let mut dena = nds[i] * nds[i] * kzc;
-				let mut denb = nds[j] * nds[j] * kzc;
-
-				for (da, db) in ks.iter()
-					.map(|k| (am.get(k).map_or(0, |v| *v) as f64, bm.get(k).map_or(0, |v| *v) as f64))
-					.map(|(ka, kb)| (ka-nds[i], kb-nds[j])) {
+						num -= da * nds[j];
+						num -= db * nds[i];
 						num += da * db;
-						dena += da * da;
-						denb += db * db;
+					}
+
+					if aid <= bid {
+						ii += 1;
+					} 
+
+					if aid >= bid {
+						jj += 1;
+					}
 				}
 
 				// pearsons r correlation
-				let r = num / (dena * denb).sqrt();
+				let r = num / (sum2[i] * sum2[j]).sqrt();
 				trace!(target: "app::dump", "Word {} and {} corr {}", i, j, r);
 
 				w.write(&r.to_be_bytes())

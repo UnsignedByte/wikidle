@@ -28,10 +28,12 @@ appenders:
 root:
   level: trace
   appenders:
+    - stdout
+    - basic
     - verbose
 loggers:
   app::basic:
-    level: debug
+    level: info
     appenders:
       - stdout
       - basic

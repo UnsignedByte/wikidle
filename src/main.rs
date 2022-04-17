@@ -98,6 +98,7 @@ fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Corre
         }
     };
 
+    info!("Generating correlation data...")
     Correlation::new(&dat.0, dat.1, &cpath, &dict).unwrap()
 }
 
