@@ -1,6 +1,8 @@
+use std::fs::File;
 use xml::reader::{EventReader, XmlEvent};
+use std::collections::{ HashMap };
 
-use std::io::{BufRead};
+use std::io::{BufReader, BufRead};
 use lazy_static::lazy_static;
 use log::{debug, warn, trace};
 
@@ -29,6 +31,21 @@ lazy_static! {
 	static ref DOUBLE_CLOSE_CURLY: Regex = Regex::new(r"\}\}").unwrap();
 	static ref OPEN_BAR_CURLY: Regex = Regex::new(r"\{\|").unwrap();
 	static ref CLOSE_BAR_CURLY: Regex = Regex::new(r"\|\}[^}]").unwrap();
+}
+
+pub type Dict = HashMap<String, u32>;
+
+pub fn load_dict(fname: &str) -> Result<Dict> {
+  let mut dict: Dict = HashMap::new();
+
+	let df = File::open(fname).map_err(|_| ErrorKind::Io)?;
+  let df = BufReader::new(df);
+
+  for (i, l) in df.lines().enumerate() {
+      dict.entry(l.map_err(|_| ErrorKind::Io)?.to_lowercase()).or_insert(i as u32);
+  }
+
+  Ok(dict)
 }
 
 // Type representing a page.

@@ -1,8 +1,9 @@
 mod test {
+    use bzip2::bufread::BzDecoder;
+    use regex::Regex;
     use crate::*;
-	use std::io::Read;
-    use log::{debug};
-
+	use std::io::{BufRead, Read};
+    
 	#[test]
     /// Test database serialization and deserialization.
 	fn database_serialize_deserialize() {

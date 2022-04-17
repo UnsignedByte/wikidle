@@ -1,33 +1,19 @@
 /// Analyzes the wikipedia database
+use crate::Dict;
 use core::fmt::{Formatter, Debug};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use std::collections::{ HashMap };
 use regex::Regex;
 use lazy_static::lazy_static;
-use std::io::{BufWriter, BufReader, BufRead, Seek, SeekFrom};
-use std::fs::File;
+use std::io::{BufWriter, BufReader, Seek, SeekFrom};
+use std::fs::{File, OpenOptions};
 use log::{debug, trace};
 use super::error::*;
 
 lazy_static! {
 	/// Static regex for parsing words.
 	static ref WORD: Regex = Regex::new(r"\b[^\s]+\b").unwrap();
-}
-
-pub type Dict = HashMap<String, u32>;
-
-pub fn load_dict(fname: &str) -> Result<Dict> {
-  let mut dict: Dict = HashMap::new();
-
-	let df = File::open(fname).map_err(|_| ErrorKind::Io)?;
-  let df = BufReader::new(df);
-
-  for (i, l) in df.lines().enumerate() {
-      dict.entry(l.map_err(|_| ErrorKind::Io)?.to_lowercase()).or_insert(i as u32);
-  }
-
-  Ok(dict)
 }
 
 /// Struct representing the frequency analysis of words in the database.
@@ -54,7 +40,7 @@ impl<'a> Frequency<'a> {
 	/// Load a read-only frequency data table from data.
 	fn deserialize ( fname: &str, index: Vec<u64> ) -> Result<Frequency<'static>> {
 		Ok(Frequency {
-			writer: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
+			writer: BufWriter::new(OpenOptions::new().append(true).open(fname).map_err(|_| ErrorKind::Io)?),
 			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
 			fname: fname.to_owned(),
 			index,
@@ -109,15 +95,13 @@ impl<'a> Frequency<'a> {
 	}
 
 	// Writes the serializer to a file organized by word
-	pub fn load( &mut self ) -> Result<HashMap<u32, HashMap<u32,u16>>> {
-
-		let mut map: HashMap<u32, HashMap<u32,u16>> = HashMap::new();
-
-		self.reader.seek(SeekFrom::End(0))
-			.map_err(|_| ErrorKind::Io)?;
+	pub fn load( &mut self ) -> Result<HashMap<u32, Vec<(u32, u16)>>> {
+		let mut map: HashMap<u32, Vec<(u32, u16)>> = HashMap::new();
 
 		for id in 0..self.index.len() {
 			let start = self.index[id];
+
+			trace!(target: "app::dump", "loading article {} at byte {}", id, start);
 
 			self.reader.seek(SeekFrom::Start(start))
 				.map_err(|_| ErrorKind::Io)?;
@@ -125,15 +109,21 @@ impl<'a> Frequency<'a> {
 			let dmap: HashMap<u32,u16> = bincode::deserialize_from(&mut self.reader)
 				.map_err(|_| ErrorKind::Serialization)?;
 
+			trace!(target: "app::dump", "Deserialized");
+
 			for (word, count) in dmap.iter() {
-				*map.entry(*word)
-					.or_insert(HashMap::new())
-					.entry(id as u32)
-					.or_insert(0) = *count;
+				map.entry(*word)
+					.or_insert(Vec::new())
+					.push( (id as u32, *count) );
 			}
 		}
 
 		Ok(map)
+	}
+
+	/// Get the size of the frequency database (number of inserted articles)
+	pub fn len( &self ) -> usize {
+		self.index.len()
 	}
 }
 
@@ -223,8 +213,8 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
       		}
       	}
 
-      	let fname: String = fname.ok_or_else(|| de::Error::missing_field("fname'"))?;
-      	let index = index.ok_or_else(|| de::Error::missing_field("index'"))?;
+      	let fname: String = fname.ok_or_else(|| de::Error::missing_field("fname"))?;
+      	let index = index.ok_or_else(|| de::Error::missing_field("index"))?;
 				Ok(Frequency::deserialize(&fname, index)
 					.map_err(|_| de::Error::invalid_value(
 						de::Unexpected::Str(&fname),
