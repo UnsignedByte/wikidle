@@ -116,7 +116,7 @@ mod test {
             (3, vec![(5, 1)])
         ]);
 
-        let mut c = Correlation::new(&dat, 10, "results/_test/corr.dat", &dict).unwrap();
+        let mut c = Correlation::new(dat, 10, "results/_test/corr.dat", &dict).unwrap();
 
         println!("{:?}", c.dict());
 

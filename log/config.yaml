@@ -38,7 +38,7 @@ loggers:
       - stdout
       - basic
   app::dump:
-    level: trace
+    level: debug
     appenders:
       - verbose
     additive: false

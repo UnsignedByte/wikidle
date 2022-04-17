@@ -1,7 +1,8 @@
 /// Module managing correlation data
+use core::hash::{Hasher, Hash};
 use std::collections::{HashSet, HashMap};
 use threadpool::ThreadPool;
-use crate::{Dict, Frequency};
+use crate::{Dict};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use core::fmt::{Formatter, Debug};
@@ -9,7 +10,7 @@ use std::io::{BufWriter, BufReader, Write, Read, Seek, SeekFrom};
 use std::fs::File;
 use log::{debug, trace};
 use super::error::*;
-use std::sync::{Arc,RwLock,RwLockWriteGuard,RwLockReadGuard};
+use std::sync::{Arc,RwLock};
 
 /// Structure storing corelation data
 pub struct Correlation {
@@ -19,7 +20,7 @@ pub struct Correlation {
 }
 
 impl Correlation {
-	pub fn new(dat: &HashMap<u32, Vec<(u32, u16)>>, len: usize, fname: &str, dict: &Dict) -> Result<Correlation> {
+	pub fn new(mut dat: HashMap<u32, Vec<(u32, u16)>>, len: usize, fname: &str, dict: &Dict) -> Result<Correlation> {
 
 		debug!(target: "app::dump", "Current dict size {}", dict.len());
 
@@ -42,16 +43,16 @@ impl Correlation {
 		ndk.sort_by(|(_, a), (_, b)| (*a).cmp(*b));
 		
 		let ndk: Vec<u32> = ndk
-			.iter()
+			.into_iter()
 			.map(|(k, _)| k)
-			.map(|k| *dict.get(*k).unwrap())
+			.map(|k| *dict.get(k).unwrap())
 			.collect();
 
 		// calculate sums 
 		let nds: Vec<f64> = ndk.iter()
 			.map(|k| dat.get(k).unwrap())
 			.map(|d| 
-				d.iter()
+				d.into_iter()
 					.map(|(_, v)| *v as f64)
 					.sum::<f64>()
 				/ len as f64
@@ -63,7 +64,7 @@ impl Correlation {
 		let sum = ndk.iter()
 			.map(|k| dat.get(k).unwrap())
 			.enumerate()
-			.map(|(i, a)| (a.iter()
+			.map(|(i, a)| (a.into_iter()
 				.map(|(_, c)| *c as f64 - nds[i])
 				.collect::<Vec<f64>>(), a.len())
 			);
@@ -71,7 +72,7 @@ impl Correlation {
 		let sum2: Vec<f64> = sum
 			.clone()
 			.enumerate()
-			.map(|(i, (e, l))| e.iter()
+			.map(|(i, (e, l))| e.into_iter()
 				.map(|n| n * n)
 				.sum::<f64>()
 				+ (len - l) as f64 * nds[i] * nds[i]
@@ -79,10 +80,41 @@ impl Correlation {
 
 		let sum: Vec<f64> = sum
 			.map(|(e, _)| e
-				.iter().sum()
+				.into_iter().sum()
 			).collect();
 
-		let ndk = Arc::new(ndk);
+		debug!(target: "app::dump", "Generated presums");
+
+		struct Ac(u32, u16);
+
+		impl Hash for Ac {
+			fn hash<H> (&self, h: &mut H) 
+				where H: Hasher, {
+					self.0.hash(h);
+			}
+		}
+
+		impl PartialEq for Ac {
+			fn eq(&self, other: &Self) -> bool {
+				self.0 == other.0
+			}
+		}
+
+		impl Eq for Ac {}
+
+		// consumes data and converts it to hashset form
+		let uniq: Vec<Arc<HashSet<Ac>>> = ndk.into_iter()
+			.map(|e| dat.remove(&e).unwrap())
+			.map(|e| e.into_iter()
+				.map(|(a,b)| Ac(a,b))
+				.collect::<HashSet<Ac>>()
+			)
+			.map(Arc::new)
+			.collect();
+
+		debug!(target: "app::dump", "Generated hashsets");
+
+		let uniq = Arc::new(uniq);
 		let nds = Arc::new(nds);
 		let sum = Arc::new(sum);
 		let sum2 = Arc::new(sum2);
@@ -95,20 +127,21 @@ impl Correlation {
 		};
 
 		for i in 0 .. nd.len() {
-			let a = Arc::new(dat.get(&ndk[i]).unwrap().clone());
+			debug!("Parsing word {}.", i);
 
-			type SharedDat = (usize, usize, Arc<Vec<(u32,u16)>>, Arc<Vec<f64>>, Arc<Vec<f64>>, Arc<Vec<f64>>);
+			type SharedDat = (usize, usize, Arc<HashSet<Ac>>, Arc<Vec<f64>>, Arc<Vec<f64>>, Arc<Vec<f64>>);
 
 			let shared: Arc<SharedDat> = Arc::new( (
 				i,
 				len,
-				a.clone(),
+				uniq[i].clone(),
 				nds.clone(),
 				sum.clone(),
 				sum2.clone(),
 			) );
 
-			let calc = |j: usize, buf: Arc<RwLock<f64>>, shared: Arc<SharedDat>, b: Vec<(u32,u16)>| {
+			let calc = |j: usize, buf: Arc<RwLock<f64>>, shared: Arc<SharedDat>, b: Arc<HashSet<Ac>>| {
+				let b = &*b;
 				let (
 					i,
 					len,
@@ -129,29 +162,24 @@ impl Correlation {
 				let mut num = sum[i] * -nds[j] + sum[j] * -nds[i];
 				let mut nc = 0; // number of shared articles
 
-				let (mut ii, mut jj) = (0,0);
+				let mut iter =  |(a, i): (&HashSet<Ac>, usize), (b, j): (&HashSet<Ac>, usize)| {
+					for t in a.iter() {
+						if let Some(t2) = b.get(t) {
+							let (ac, bc) = (t.1 as f64, t2.1 as f64);
+							let (da, db) = (ac - nds[i], bc - nds[j]);
 
-				while ii < a.len() && jj < b.len() {
-					let (aid, ac) = a[ii];
-					let (bid, bc) = b[jj];
-
-					if aid == bid {
-						let (ac, bc) = (ac as f64, bc as f64);
-						let (da, db) = (ac - nds[i], bc - nds[j]);
-
-						num += da * nds[j];
-						num += db * nds[i];
-						num += da * db;
-						nc += 1;
+							num += da * nds[j];
+							num += db * nds[i];
+							num += da * db;
+							nc += 1;
+						}
 					}
+				};
 
-					if aid <= bid {
-						ii += 1;
-					} 
-
-					if aid >= bid {
-						jj += 1;
-					}
+				if a.len() < b.len() {
+					iter((a, i), (b, j));
+				} else {
+					iter((b, j), (a, i));
 				}
 
 				let nc = (len - a.len() - b.len() + nc) as f64;
@@ -175,7 +203,7 @@ impl Correlation {
 				buf.push(Arc::new(RwLock::new(0.)));
 				let slice = Arc::clone(&buf[j]);
 
-				let b: Vec<(u32, u16)> = dat.get(&ndk[j]).unwrap().clone(); // b freq data
+				let b = uniq[j].clone(); // b freq data
 
 				let cc = move || calc(j, slice, shared, b);
 				match pool {

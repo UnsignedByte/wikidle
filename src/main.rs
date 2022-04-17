@@ -22,85 +22,72 @@ fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Corre
     let path = format!("results/{namespace}");
 
     let root = format!("{path}/index.dat");
-    let raw = format!("{path}/rawfreq.dat"); // raw frequency data
+    let cind = format!("{path}/corrindex.dat");
     let cpath = format!("{path}/corr.dat");
 
-    // if let Ok(f) = File::open(&cpath) {
-    //     info!("Correlation data already exists, loading.");
-    //     return bincode::deserialize_from(f).unwrap();
-    // }
+    if let Ok(f) = File::open(&cind) {
+        info!("Correlation data already exists, loading.");
+        return bincode::deserialize_from(f).unwrap();
+    }
 
-    let dat: (HashMap<u32, Vec<(u32, u16)>>, usize) = match File::open(&raw) {
+    let mut fa = match File::open(&root) {
         Ok(f) => {
-            info!("Directly loading raw data...");
-
+            info!("Loading database.");
             match bincode::deserialize_from(f) {
-                Ok(dat) => dat,
-                Err(_) => panic!("Invalid raw data.")
+                Ok(d) => d,
+                Err(e) => panic!("Failed to deserialize database with error:\n{e}")
             }
-        },
+        }
         Err(_) => {
-            info!("Missing raw data, creating.");
+            info!("Failed to read database, creating new instead.");
 
-            let mut fa = match File::open(&root) {
-                Ok(f) => {
-                    info!("Loading database.");
-                    match bincode::deserialize_from(f) {
-                        Ok(d) => d,
-                        Err(e) => panic!("Failed to deserialize database with error:\n{e}")
+            let mut db = File::open(format!("{}.bz2", DBDATA)).unwrap();
+
+            db.seek(SeekFrom::Start(start)).unwrap();
+
+            let db = BufReader::new(db);
+            let db = MultiBzDecoder::new(db);
+            // let db = File::open(DBDATA).unwrap();
+            let db = BufReader::new(db);
+            let db = Database::new(db);
+
+            let mut a = db.into_iter();
+
+            std::fs::create_dir_all(&path).unwrap();
+
+            let mut fa = Frequency::new(&format!("{path}/data.dat"), &dict).unwrap();
+
+            while let Some(e) = a.next() {
+                let page = match e {
+                    Ok(x) => x,
+                    Err(x) => {
+                        error!("Failed to parse article with error {x:?}, skipped");
+                        continue;
                     }
-                }
-                Err(_) => {
-                    info!("Failed to read database, creating new instead.");
+                };
+                fa.insert(page.text).unwrap();
 
-                    let mut db = File::open(format!("{}.bz2", DBDATA)).unwrap();
+                info!(target: "app::basic", "Parsed article {}: {}", page.id, page.title);
+            }
 
-                    db.seek(SeekFrom::Start(start)).unwrap();
+            let fw = BufWriter::new(File::create(&root).unwrap());
 
-                    let db = BufReader::new(db);
-                    let db = MultiBzDecoder::new(db);
-                    // let db = File::open(DBDATA).unwrap();
-                    let db = BufReader::new(db);
-                    let db = Database::new(db);
+            bincode::serialize_into(fw, &fa).unwrap();
 
-                    let mut a = db.into_iter();
-
-                    std::fs::create_dir_all(&path).unwrap();
-
-                    let mut fa = Frequency::new(&format!("{path}/data.dat"), &dict).unwrap();
-
-                    while let Some(e) = a.next() {
-                        let page = match e {
-                            Ok(x) => x,
-                            Err(x) => {
-                                error!("Failed to parse article with error {x:?}, skipped");
-                                continue;
-                            }
-                        };
-                        fa.insert(page.text).unwrap();
-
-                        info!(target: "app::basic", "Parsed article {}: {}", page.id, page.title);
-                    }
-
-                    let fw = BufWriter::new(File::create(&root).unwrap());
-
-                    bincode::serialize_into(fw, &fa).unwrap();
-
-                    fa
-                }
-            };
-            info!("Loading freq data to memory");
-            let dat = (fa.load().unwrap(), fa.len());
-
-            let fw = BufWriter::new(File::create(&raw).unwrap());
-            bincode::serialize_into(fw, &dat).unwrap();
-
-            dat
+            fa
         }
     };
 
+    info!("Loading freq data to memory");
+    let dat = fa.load().unwrap();
+
     info!("Generating correlation data...");
-    Correlation::new(&dat.0, dat.1, &cpath, &dict).unwrap()
+    let corr = Correlation::new(dat, fa.len(), &cpath, &dict).unwrap();
+
+    let fw = BufWriter::new(File::create(&cind).unwrap());
+    bincode::serialize_into(fw, &corr).unwrap();
+
+    corr
 }
 
 fn main() {
