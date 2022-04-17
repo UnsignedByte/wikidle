@@ -396,8 +396,8 @@ impl<T: BufRead> IntoIterator for Database<T> {
 }
 
 impl<T: BufRead> std::fmt::Debug for Database<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Database")
-         .finish()
-    }
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Database")
+		 .finish()
+	}
 }
