@@ -1,3 +1,10 @@
+use server::{
+	Launch,
+	rocket::{
+		self,
+		config::{Config, Environment}
+	}
+};
 use std::collections::HashMap;
 use crate::database::{
 	read::{Dict, load_dict, Database},
@@ -12,6 +19,7 @@ use log::{info, error};
 use const_format::formatcp;
 
 mod database;
+mod host;
 
 const DBNAME: &str = "enwiki-20220101-pages-articles-multistream";
 const DBDATA: &str = formatcp!("data/{}/{0}.xml", DBNAME);
@@ -97,7 +105,18 @@ fn main() {
 
 	let dict = load_dict("data/words").unwrap();
 
-	let corr = gen_word_frequency("frequency", &dict, 0);
+	// this will be discarded as it is already serialized
+	let _ = gen_word_frequency("frequency", &dict, 0);
+
+	let srv = host::Server::new();
+	let conf = Config::build(Environment::active().unwrap())
+		.address("127.0.0.1")
+    .port(3000)
+    .unwrap();
+
+	let app = rocket::custom(conf);
+
+	let app = srv.mount("/", app);
 }
 
 

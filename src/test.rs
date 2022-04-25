@@ -120,21 +120,15 @@ mod test {
 
 		println!("{:?}", c.dict());
 
-		println!("{:?}", c.corr("A","A's"));
+		let mut corr = |a:&str, b:&str, exp: f64| {
+			let co = c.corr(a,b).unwrap_or(0.);
+			println!("{}/{}: {} ({})", a, b, co, exp);
 
-		assert!(
-			(c.corr("A","A's").unwrap_or(0.) - 1.).abs()
-			< EPSILON
-		);
+			assert!((co - exp).abs() < EPSILON);
+		};
 
-		assert!(
-			(c.corr("AMD","A").unwrap_or(0.) - 0.804030252207).abs()
-			< EPSILON
-		);
-
-		assert!(
-			(c.corr("AMD's","AMD").unwrap_or(0.) - -0.111111111111).abs()
-			< EPSILON
-		);
+		corr("A","A's", 1.);
+		corr("AMD","A", 0.804030252207);
+		corr("AMD's","AMD", -0.111111111111);
 	}
 }

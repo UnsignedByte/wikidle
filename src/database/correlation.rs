@@ -86,7 +86,7 @@ impl Correlation {
 
 		debug!(target: "app::dump", "Generated presums");
 
-		struct Ac(u32, u16);
+		struct Ac(u32, f64);
 
 		impl Hash for Ac {
 			fn hash<H> (&self, h: &mut H) 
@@ -107,7 +107,7 @@ impl Correlation {
 		let uniq: Vec<Arc<HashSet<Ac>>> = ndk.into_iter()
 			.map(|e| dat.remove(&e).unwrap())
 			.map(|e| e.into_iter()
-				.map(|(a,b)| Ac(a,b))
+				.map(|(a,b)| Ac(a,b as f64))
 				.collect::<HashSet<Ac>>()
 			)
 			.map(Arc::new)
@@ -134,10 +134,10 @@ impl Correlation {
 			let shared: Arc<SharedDat> = Arc::new( (
 				i,
 				len,
-				uniq[i].clone(),
-				nds.clone(),
-				sum.clone(),
-				sum2.clone(),
+				Arc::clone(&uniq[i]),
+				Arc::clone(&nds),
+				Arc::clone(&sum),
+				Arc::clone(&sum2),
 			) );
 
 			let calc = |j: usize, buf: Arc<RwLock<f64>>, shared: Arc<SharedDat>, b: Arc<HashSet<Ac>>| {
@@ -165,8 +165,7 @@ impl Correlation {
 				let mut iter =  |(a, i): (&HashSet<Ac>, usize), (b, j): (&HashSet<Ac>, usize)| {
 					for t in a.iter() {
 						if let Some(t2) = b.get(t) {
-							let (ac, bc) = (t.1 as f64, t2.1 as f64);
-							let (da, db) = (ac - nds[i], bc - nds[j]);
+							let (da, db) = (t.1 - nds[i], t2.1 - nds[j]);
 
 							num += da * nds[j];
 							num += db * nds[i];
@@ -203,7 +202,7 @@ impl Correlation {
 				buf.push(Arc::new(RwLock::new(0.)));
 				let slice = Arc::clone(&buf[j]);
 
-				let b = uniq[j].clone(); // b freq data
+				let b = Arc::clone(&uniq[j]); // b freq data
 
 				let cc = move || calc(j, slice, shared, b);
 				match pool {
@@ -244,7 +243,7 @@ impl Correlation {
 		})
 	}
 
-	/// Returns the pearson's r correlation between [a] and [b].
+	/// Returns the pearson's r correlation between two words.
 	pub fn corr(&mut self, a: &str, b: &str) -> Option<f64> {
 		if a == b {
 			return Some(1.)
