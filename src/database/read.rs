@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::fs::File;
 use xml::reader::{EventReader, XmlEvent};
 use std::collections::{ HashMap };
@@ -35,7 +36,7 @@ lazy_static! {
 
 pub type Dict = HashMap<String, u32>;
 
-pub fn load_dict(fname: &str) -> Result<Dict> {
+pub fn load_dict<P: AsRef<Path>>(fname: P) -> Result<Dict> {
 	let mut dict: Dict = HashMap::new();
 
 	let df = File::open(fname).map_err(|_| ErrorKind::Io)?;

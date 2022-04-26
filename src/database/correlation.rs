@@ -1,8 +1,9 @@
 /// Module managing correlation data
+use std::path::{Path, PathBuf};
 use core::hash::{Hasher, Hash};
 use std::collections::{HashSet, HashMap};
 use threadpool::ThreadPool;
-use crate::{Dict};
+use super::read::{Dict};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use core::fmt::{Formatter, Debug};
@@ -14,14 +15,14 @@ use std::sync::{Arc,RwLock};
 
 /// Structure storing correlation data
 pub struct Correlation {
-	fname: String,
+	fname: PathBuf,
 	reader: BufReader<File>,
 	dict: Dict,
 }
 
 impl Correlation {
 	/// Generates a new correlation database from raw exported frequency data.
-	pub fn new(mut dat: HashMap<u32, Vec<(u32, u16)>>, len: usize, fname: &str, dict: &Dict) -> Result<Correlation> {
+	pub fn new <P: AsRef<Path>> (mut dat: HashMap<u32, Vec<(u32, u16)>>, len: usize, fname: P, dict: &Dict) -> Result<Correlation> {
 
 		debug!(target: "app::dump", "Current dict size {}", dict.len());
 
@@ -35,7 +36,7 @@ impl Correlation {
 
 		debug!(target: "app::dump", "Pruned dict to size {}", nd.len());
 
-		let mut w = BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?);
+		let mut w = BufWriter::new(File::create(&fname).map_err(|_| ErrorKind::Io)?);
 
 		let mut ndk: Vec<(&String, &u32)> = nd
 			.iter()
@@ -228,17 +229,17 @@ impl Correlation {
 		}
 
 		Ok(Correlation {
-			fname: fname.to_owned(),
-			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
+			reader: BufReader::new(File::open(&fname).map_err(|_| ErrorKind::Io)?),
+			fname: fname.as_ref().canonicalize().map_err(|_| ErrorKind::Io)?,
 			dict: nd
 		})
 	}
 
 	/// Used to load a correlation database from an existing file
-	fn deserialize(fname: &str, dict: Dict) -> Result<Correlation> {
+	fn deserialize <P: AsRef<Path>> (fname: P, dict: Dict) -> Result<Correlation> {
 		Ok(Correlation {
-			fname: fname.to_owned(),
-			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
+			reader: BufReader::new(File::open(&fname).map_err(|_| ErrorKind::Io)?),
+			fname: fname.as_ref().canonicalize().map_err(|_| ErrorKind::Io)?,
 			dict
 		})
 	}
@@ -321,7 +322,7 @@ impl<'de> Deserialize<'de> for Correlation {
 			fn visit_seq<V>(self, mut seq: V) -> std::result::Result<Self::Value, V::Error>
 				where V: SeqAccess<'de>,
 			{
-				let fname: String = seq.next_element()?
+				let fname: PathBuf = seq.next_element()?
 					.ok_or_else(|| de::Error::invalid_length(0, &self))?;
 
 				let dict: Dict = seq.next_element()?
@@ -329,7 +330,7 @@ impl<'de> Deserialize<'de> for Correlation {
 
 				Ok(Correlation::deserialize(&fname, dict)
 					.map_err(|_| de::Error::invalid_value(
-						de::Unexpected::Str(&fname),
+						de::Unexpected::Str(&format!("Unexpected path: <{}>", fname.to_str().unwrap_or("none"))),
 						&"A valid filepath."
 					))?)
 			}
@@ -359,12 +360,12 @@ impl<'de> Deserialize<'de> for Correlation {
       		}
       	}
 
-      	let fname: String = fname.ok_or_else(|| de::Error::missing_field("fname"))?;
+      	let fname: PathBuf = fname.ok_or_else(|| de::Error::missing_field("fname"))?;
       	let dict: Dict = dict.ok_or_else(|| de::Error::missing_field("dict"))?;
 
 				Ok(Correlation::deserialize(&fname, dict)
 					.map_err(|_| de::Error::invalid_value(
-						de::Unexpected::Str(&fname),
+						de::Unexpected::Str(&format!("Unexpected path: <{}>", fname.to_str().unwrap_or("none"))),
 						&"A valid filepath."
 					))?)
       }

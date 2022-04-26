@@ -1,5 +1,6 @@
 /// Analyzes the wikipedia database
-use crate::Dict;
+use std::path::{Path, PathBuf};
+use super::read::Dict;
 use core::fmt::{Formatter, Debug};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
@@ -18,7 +19,7 @@ lazy_static! {
 
 /// Struct representing the frequency analysis of words in the database.
 pub struct Frequency<'a> {
-	fname: String,
+	fname: PathBuf,
 	writer: BufWriter<File>,
 	reader: BufReader<File>,
 	index: Vec<u64>,
@@ -27,22 +28,22 @@ pub struct Frequency<'a> {
 
 impl<'a> Frequency<'a> {
 	/// Create a new empty frequency data table with a dictionary.
-	pub fn new ( fname: &str, dict: &'a Dict ) -> Result<Frequency<'a>> {
+	pub fn new <P: AsRef<Path>> ( fname: P, dict: &'a Dict ) -> Result<Frequency<'a>> {
 		Ok(Frequency {
-			writer: BufWriter::new(File::create(fname).map_err(|_| ErrorKind::Io)?),
-			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
-			fname: fname.to_owned(),
+			writer: BufWriter::new(File::create(&fname).map_err(|_| ErrorKind::Io)?),
+			reader: BufReader::new(File::open(&fname).map_err(|_| ErrorKind::Io)?),
+			fname: fname.as_ref().canonicalize().map_err(|_| ErrorKind::Io)?,
 			index: Vec::new(),
 			dict: Some(dict),
 		})
 	}
 
 	/// Load a read-only frequency data table from data.
-	fn deserialize ( fname: &str, index: Vec<u64> ) -> Result<Frequency<'static>> {
+	fn deserialize <P: AsRef<Path>> ( fname: P, index: Vec<u64> ) -> Result<Frequency<'static>> {
 		Ok(Frequency {
-			writer: BufWriter::new(OpenOptions::new().append(true).open(fname).map_err(|_| ErrorKind::Io)?),
-			reader: BufReader::new(File::open(fname).map_err(|_| ErrorKind::Io)?),
-			fname: fname.to_owned(),
+			writer: BufWriter::new(OpenOptions::new().append(true).open(&fname).map_err(|_| ErrorKind::Io)?),
+			reader: BufReader::new(File::open(&fname).map_err(|_| ErrorKind::Io)?),
+			fname: fname.as_ref().canonicalize().map_err(|_| ErrorKind::Io)?,
 			index,
 			dict: None,
 		})
@@ -175,7 +176,7 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
 			fn visit_seq<V>(self, mut seq: V) -> std::result::Result<Self::Value, V::Error>
 				where V: SeqAccess<'de>,
 			{
-				let fname: String = seq.next_element()?
+				let fname: PathBuf = seq.next_element()?
 					.ok_or_else(|| de::Error::invalid_length(0, &self))?;
 
 				let index = seq.next_element()?
@@ -183,7 +184,7 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
 
 				Ok(Frequency::deserialize(&fname, index)
 					.map_err(|_| de::Error::invalid_value(
-						de::Unexpected::Str(&fname),
+						de::Unexpected::Other(&format!("Unexpected path: <{}>", fname.to_str().unwrap_or("none"))),
 						&"A valid filepath."
 					))?)
 			}
@@ -213,11 +214,11 @@ impl<'de> Deserialize<'de> for Frequency<'_> {
       		}
       	}
 
-      	let fname: String = fname.ok_or_else(|| de::Error::missing_field("fname"))?;
+      	let fname: PathBuf = fname.ok_or_else(|| de::Error::missing_field("fname"))?;
       	let index = index.ok_or_else(|| de::Error::missing_field("index"))?;
 				Ok(Frequency::deserialize(&fname, index)
 					.map_err(|_| de::Error::invalid_value(
-						de::Unexpected::Str(&fname),
+						de::Unexpected::Other(&format!("Unexpected path: <{}>", fname.to_str().unwrap_or("none"))),
 						&"A valid filepath."
 					))?)
       }
