@@ -99,7 +99,7 @@ fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Corre
 	corr
 }
 
-fn main() {
+fn main () {
 	log4rs::init_file("log/config.yaml", Default::default()).unwrap();
 
 	info!("Initiated Logger");
@@ -117,7 +117,7 @@ fn main() {
 
 	let app = rocket::custom(conf);
 
-	let app = srv.mount("/", app);
+	error!("Launch failed on {}", srv.mount("/", app).launch());
 }
 
 
