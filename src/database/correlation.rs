@@ -244,22 +244,35 @@ impl Correlation {
 		})
 	}
 
-	/// Returns the pearson's r correlation between two words.
-	pub fn corr(&mut self, a: &str, b: &str) -> Option<f64> {
+	/// Index of a word in the dictionary.
+	pub fn index (&self, a: &str) -> Option<u32> {
+		self.dict.get(&a.to_lowercase()).map(|e| *e)
+	}
+
+	/// Find the f64 index of a word pair correlation.
+	///
+	/// Value should be multiplied by 8 to get the byte index.
+	fn find (&self, a: u64, b: u64) -> Option<u64>{
 		if a == b {
-			return Some(1.)
+			return None
 		}
-
-		let a = *self.dict.get(&a.to_lowercase())? as u64;
-		let b = *self.dict.get(&b.to_lowercase())? as u64;
-
 		let (a, b) = if a < b { (b, a) } else { (a, b) };
 
 		// a should be > b
 
-		let ind = a * (a - 1) / 2 + b;
+		Some(a * (a - 1) / 2 + b)
+	}
 
-		// println!("{}, {}, {}", a, b, ind);
+	/// Returns the pearson's r correlation between two words.
+	pub fn corr (&mut self, a: &str, b: &str) -> Option<f64> {
+		if a == b {
+			return Some(1.)
+		}
+
+		let a = self.index(a)? as u64;
+		let b = self.index(b)? as u64;
+
+		let ind = self.find(a, b).unwrap();
 
 		self.reader.seek(SeekFrom::Start(ind * 8)).ok()?;
 
@@ -268,6 +281,35 @@ impl Correlation {
 		self.reader.read_exact(&mut buf).ok()?;
 
 		Some(f64::from_be_bytes(buf))
+	}
+
+	pub fn corrall (&mut self, a: &str) -> Option<Vec<f64>> {
+		let a = self.index(a)? as u64;
+
+		let ind = self.find(a, 0).unwrap_or(0);
+
+		self.reader.seek(SeekFrom::Start(ind * 8)).ok()?;
+
+		let mut buf: Vec<u8> = vec![0; self.dict.len() * 8];
+
+		self.reader.read_exact(&mut buf[0..a as usize * 8]).ok()?;
+
+		for b in a+1..self.dict.len() as u64 {
+			self.reader.seek(SeekFrom::Start(self.find(b, a)? * 8)).ok()?;
+			let b = b as usize * 8;
+			self.reader.read_exact(&mut buf[b..b+8]).ok()?;
+		}
+
+		let mut ret: Vec<f64> = vec![0.; self.dict.len()];
+
+		for i in 0..self.dict.len() {
+			let t : [u8; 8] = buf[i*8..i*8+8].try_into().unwrap();
+			ret[i] = f64::from_be_bytes(t);
+		}
+
+		ret[a as usize] = 1.;
+
+		Some(ret)
 	}
 
 	pub fn dict<'a>(&'a self) -> &'a Dict {

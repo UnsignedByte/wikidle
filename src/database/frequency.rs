@@ -95,7 +95,7 @@ impl<'a> Frequency<'a> {
 		Ok(())
 	}
 
-	// Writes the serializer to a file organized by word
+	/// Load a frequency into a map ordered by word.
 	pub fn load( &mut self ) -> Result<HashMap<u32, Vec<(u32, u16)>>> {
 		let mut map: HashMap<u32, Vec<(u32, u16)>> = HashMap::new();
 
