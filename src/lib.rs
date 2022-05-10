@@ -1,6 +1,7 @@
 #![feature(proc_macro_hygiene, decl_macro)]
 
 use std::path::{Path, PathBuf};
+use lru::LruCache;
 use std::fs::File;
 use server::{
 	Launch,
@@ -18,6 +19,12 @@ use server::{
 };
 use serde::Deserialize;
 use database::correlation::Correlation;
+use lazy_static::lazy_static;
+use rand::{
+	SeedableRng,
+	rngs::SmallRng
+};
+use chrono::NaiveDate;
 
 pub mod database;
 
@@ -33,9 +40,36 @@ pub struct Server {
 	static_f: StaticFiles
 }
 
+struct CState {
+	cache: LruCache<u32, Vec<f64>>,
+	corr: Correlation,
+}
+
+impl CState {
+	pub fn new(corr: Correlation, sz: usize) -> CState {
+		CState {
+			cache: LruCache::new(sz),
+			corr
+		}
+	}
+}
+
+
+lazy_static! {
+	static ref ROOT_DATE : NaiveDate = NaiveDate::from_ymd(2022, 5, 9);
+	static ref WORD_LIST : Vec<String> = Vec::new();
+
+
+}
+
 /// Get correlation data between two sets of words
-#[post("/corr", format = "json", data = "<data>")]
-fn corr (data: Json<Req>, state: State<Correlation>) -> content::Json<&'static str> {
+#[post("/dev/corr", format = "json", data = "<data>")]
+fn corr (data: Json<Req>, state: State<CState>) -> content::Json<&'static str> {
+	todo!();
+}
+
+#[get("/guess?<word>")]
+fn guess(word: String, state: State<CState>) -> content::Json<&'static str> {
 	todo!();
 }
 
@@ -46,15 +80,19 @@ impl Launch for Server {
 		Ok(Server {
 			data: bincode::deserialize_from(
 				File::open(root.join(CORRF))?
-			).unwrap(),
+			).map_err(|_| std::io::ErrorKind::InvalidData)?,
 			static_f: StaticFiles::from(root.join("static"))
 		})
 	}
 
-	fn mount (self, path: &str, app: rocket::Rocket) -> rocket::Rocket {
+	fn mount <P: AsRef<Path>> (self, path: P, app: rocket::Rocket) -> rocket::Rocket {
+		let path = path.as_ref();
+
+		const CACHE_LEN: usize = 1000;
+
 		app
-			.manage(self.data)
-			.mount(path, routes![corr])
-			.mount(path, self.static_f)
+			.manage(CState::new(self.data, CACHE_LEN))
+			.mount(path.join("api").to_str().unwrap_or("/api"), routes![corr])
+			.mount(path.to_str().unwrap_or(""), self.static_f)
 	}
 }

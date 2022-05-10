@@ -16,7 +16,7 @@ use wikidle::{
 		frequency::{Frequency}
 	}
 };
-use std::io::{BufWriter, BufReader, Seek, SeekFrom};
+use std::io::{Write, BufWriter, BufReader, BufRead, Seek, SeekFrom};
 use bzip2::bufread::{MultiBzDecoder};
 use std::fs::File;
 
@@ -26,17 +26,22 @@ use const_format::formatcp;
 const DBNAME: &str = "enwiki-20220101-pages-articles-multistream";
 const DBDATA: &str = formatcp!("data/{}/{0}.xml", DBNAME);
 const DBINDEX: &str = formatcp!("data/{}/{0}-index.txt", DBNAME);
+const DBDICT: &str = "data/words";
+const VALID_ANSWERS: &str = "data/answers"; // valid answer words
 
-fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Correlation{
+fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) {
 	let path = Path::new("results").join(namespace);
 
 	let root = path.join("index.dat");
 	let cind = path.join("corrindex.dat");
 	let cpath = path.join("corr.dat");
 
-	if let Ok(f) = File::open(&cind) {
-		info!("Correlation data already exists, loading.");
-		return bincode::deserialize_from(f).unwrap();
+	let valid = File::open(VALID_ANSWERS);
+	let cexist = File::open(&cind);
+
+	if let (Ok(_), Ok(_)) = (&valid, &cexist) {
+		info!("Correlation data already exists, returning.");
+		return;
 	}
 
 	let mut fa = match File::open(&root) {
@@ -90,13 +95,37 @@ fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) -> Corre
 	info!("Loading freq data to memory");
 	let dat = fa.load().unwrap();
 
-	info!("Generating correlation data...");
-	let corr = Correlation::new(dat, fa.len(), &cpath, &dict).unwrap();
+	if let Err(_) = valid {
+		let mut f = BufWriter::new(File::create(VALID_ANSWERS).unwrap());
 
-	let fw = BufWriter::new(File::create(&cind).unwrap());
-	bincode::serialize_into(fw, &corr).unwrap();
+		let words: HashMap<u32, u32> = dat.iter()
+			.map(|(k, v)| 
+				(*k, v.into_iter().map(|(_, v)| *v as u32).sum())
+			).collect();
 
-	corr
+		let mut words: Vec<(&String, u32)> = dict.iter()
+			.filter_map(|(k, v)|
+				Some ( (k, words.get(v).map(|e| *e)?) )
+			).collect();
+
+		words.sort_by(|(_, a), (_, b)| b.cmp(a));
+
+		let words: Vec<&String> = words.into_iter().map(|(k, _)| k).collect();
+
+		for word in words {
+			f.write_all(format!("{}\n", word).as_bytes()).unwrap();
+		}
+
+		f.flush().unwrap();
+	};
+
+	if let Err(_) = cexist {
+		info!("Generating correlation data...");
+		let corr = Correlation::new(dat, fa.len(), &cpath, &dict).unwrap();
+
+		let fw = BufWriter::new(File::create(&cind).unwrap());
+		bincode::serialize_into(fw, &corr).unwrap();
+	}
 }
 
 fn main () {
@@ -104,10 +133,10 @@ fn main () {
 
 	info!("Initiated Logger");
 
-	let dict = load_dict("data/words").unwrap();
+	let dict = load_dict(DBDICT).unwrap();
 
 	// this will be discarded as it is already serialized
-	let _ = gen_word_frequency("frequency", &dict, 0);
+	gen_word_frequency("frequency", &dict, 0);
 
 	let srv = Server::new("").unwrap();
 	let conf = Config::build(Environment::active().unwrap())
@@ -145,11 +174,9 @@ mod test {
 		let db = BufReader::new(db);
 		let db = Database::new(db);
 
-
-		 
 		let mut a = db.into_iter();
 
-		let dict = load_dict("data/words").unwrap();
+		let dict = load_dict(DBDICT).unwrap();
 
 		let mut fa = Frequency::new("results/frequency.dat", &dict).unwrap();
 
@@ -246,16 +273,27 @@ mod test {
 
 		println!("{:?}", c.dict());
 
-		let mut corr = |a:&str, b:&str, exp: f64| {
+		let acorn = c.corrall("a").unwrap();
+
+		let corr = |c: &mut Correlation, a:&str, b:&str, exp: f64| {
 			let co = c.corr(a,b).unwrap_or(0.);
 			println!("{}/{}: {} ({})", a, b, co, exp);
 
 			assert!((co - exp).abs() < EPSILON);
 		};
 
-		corr("A","A's", 1.);
-		corr("AMD","A", 0.804030252207);
-		corr("AMD's","AMD", -0.111111111111);
+		corr(&mut c, "A","A's", 1.);
+		corr(&mut c, "AMD","A", 0.804030252207);
+		corr(&mut c, "AMD's","AMD", -0.111111111111);
+
+		let i = c.index("A's").unwrap() as usize;
+		corr(&mut c, "A", "A's", acorn[i]);
+		let i = c.index("AMD").unwrap() as usize;
+		corr(&mut c, "A", "AMD", acorn[i]);
+		let i = c.index("Amd's").unwrap() as usize;
+		corr(&mut c, "A", "AMD's", acorn[i]);
+		let i = c.index("A").unwrap() as usize;
+		corr(&mut c, "A", "A", acorn[i]);
 	}
 
 	#[test]
