@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::Path;
 use server::{
 	Launch,
@@ -16,10 +17,14 @@ use wikidle::{
 		frequency::{Frequency}
 	}
 };
-use std::io::{Write, BufWriter, BufReader, BufRead, Seek, SeekFrom};
+use std::io::{Write, BufWriter, BufReader, Seek, SeekFrom};
 use bzip2::bufread::{MultiBzDecoder};
 use std::fs::File;
-
+use serde::{
+	Deserialize,
+	de::{self, Deserializer, Visitor, MapAccess, IgnoredAny}
+};
+use core::fmt::Formatter;
 use log::{info, error};
 use const_format::formatcp;
 
@@ -28,6 +33,136 @@ const DBDATA: &str = formatcp!("data/{}/{0}.xml", DBNAME);
 const DBINDEX: &str = formatcp!("data/{}/{0}-index.txt", DBNAME);
 const DBDICT: &str = "data/words";
 const VALID_ANSWERS: &str = "data/answers"; // valid answer words
+const DICT_URI: &str = "https://api.dictionaryapi.dev/api/v2/entries/en/";
+
+/// enum representing a part of speech
+#[derive(Debug, Hash, PartialEq, Eq)]
+enum PartOfSpeech {
+	Noun,
+	Verb,
+	Adjective,
+	Adverb,
+	Preposition,
+	Conjunction
+}
+
+impl<'a> Deserialize<'a> for PartOfSpeech {
+	fn deserialize<D>(deserializer: D) -> Result<PartOfSpeech, D::Error>
+		where D: Deserializer<'a>,
+	{
+		// implementation following https://serde.rs/deserialize-struct.html
+
+		struct WVisitor;
+
+		impl<'de> Visitor<'de> for WVisitor {
+			type Value = PartOfSpeech;
+
+			fn expecting(&self, formatter: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+				formatter.write_str("JSON word info.")
+			}
+
+			fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+        where V: MapAccess<'de>,
+      {
+      	let mut part = None;
+
+      	while let Some(key) = map.next_key::<String>()? {
+      		match key.to_lowercase().as_str() {
+      			"partofspeech" => {
+      				if part.is_some() {
+      					return Err(de::Error::duplicate_field("partOfSpeech"));
+      				}
+
+      				let v = map.next_value::<String>()?;
+
+
+
+      				part = Some(match v.to_lowercase().as_str() {
+      					"noun" => PartOfSpeech::Noun,
+      					"verb" => PartOfSpeech::Verb,
+      					"adjective" => PartOfSpeech::Adjective,
+      					"adverb" => PartOfSpeech::Adverb,
+      					"preposition" => PartOfSpeech::Preposition,
+      					"conjunction" => PartOfSpeech::Conjunction,
+      					s => return Err(de::Error::invalid_value(de::Unexpected::Str(&s), &"part of speech"))
+      				});
+      			},
+      			_ => {
+      				let _ = map.next_value::<IgnoredAny>()?;
+      			}
+      		}
+      	}
+
+				Ok(part.ok_or_else(|| de::Error::missing_field("partOfSpeech"))?)
+      }
+		}
+
+    const FIELDS: &'static [&'static str] = &["word", "parts"];
+		deserializer.deserialize_struct("WordReq", FIELDS, WVisitor)
+	}
+}
+
+/// struct representing the return of a request to the free dictionary api
+#[derive(Debug)]
+struct WordReq {
+	word: String,
+	parts: HashSet<PartOfSpeech>,
+}
+
+impl<'a> Deserialize<'a> for WordReq {
+	fn deserialize<D>(deserializer: D) -> Result<WordReq, D::Error>
+		where D: Deserializer<'a>,
+	{
+		// implementation following https://serde.rs/deserialize-struct.html
+
+		struct WVisitor;
+
+		impl<'de> Visitor<'de> for WVisitor {
+			type Value = WordReq;
+
+			fn expecting(&self, formatter: &mut Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+				formatter.write_str("JSON word info.")
+			}
+
+			fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+        where V: MapAccess<'de>,
+      {
+      	let mut word = None;
+      	let mut parts = None;
+
+      	while let Some(key) = map.next_key::<String>()? {
+      		match key.to_lowercase().as_str() {
+      			"word" => {
+      				if word.is_some() {
+      					return Err(de::Error::duplicate_field("word"));
+      				}
+
+      				word = Some(map.next_value()?);
+      			},
+      			"meanings" => {
+      				if parts.is_some() {
+      					return Err(de::Error::duplicate_field("parts"));
+      				}
+
+      				parts = Some(map.next_value()?);
+      			},
+      			_ => {
+      				let _ = map.next_value::<IgnoredAny>()?;
+      			}
+      		}
+      	}
+
+      	let word: String = word.ok_or_else(|| de::Error::missing_field("word"))?;
+      	let parts: HashSet<PartOfSpeech> = parts.ok_or_else(|| de::Error::missing_field("parts"))?;
+
+				Ok(WordReq {word, parts})
+      }
+		}
+
+    const FIELDS: &'static [&'static str] = &["word", "parts"];
+		deserializer.deserialize_struct("WordReq", FIELDS, WVisitor)
+	}
+}
 
 fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) {
 	let path = Path::new("results").join(namespace);
@@ -320,5 +455,22 @@ mod test {
 		let fw = BufWriter::new(File::create(&root).unwrap());
 		bincode::serialize_into(fw, &fa).unwrap();
 		println!("Ser");
+	}
+
+	#[tokio::test]
+	/// api request
+	async fn fetch () {
+		async fn req (word: &str) -> Vec<WordReq>{
+			reqwest::get(format!("{}{}", DICT_URI, word))
+			.await.unwrap()
+			.json::<Vec<WordReq>>()
+			.await.unwrap()
+		}
+
+		let words = vec!["cow", "fetus", "oblong", "quickly", "and", "then", "but", "the", "a"];
+
+		for word in words {
+			println!("{:?}", req(word).await);
+		}
 	}
 }
