@@ -1,3 +1,7 @@
+#![feature(async_closure)]
+
+use core::time::Duration;
+use futures::{stream,StreamExt};
 use std::collections::HashSet;
 use std::path::Path;
 use server::{
@@ -74,8 +78,6 @@ impl<'a> Deserialize<'a> for PartOfSpeech {
       				}
 
       				let v = map.next_value::<String>()?;
-
-
 
       				part = Some(match v.to_lowercase().as_str() {
       					"noun" => PartOfSpeech::Noun,
@@ -164,7 +166,41 @@ impl<'a> Deserialize<'a> for WordReq {
 	}
 }
 
-fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) {
+/// Get set of parts of speech of word
+async fn word_parts (word: &str) -> Option<HashSet<PartOfSpeech>> {
+	let req = loop {
+		let req = reqwest::get(format!("{}{}", DICT_URI, word))
+			.await.ok()?;
+
+		match req.status().as_u16() {
+			200 => break req,
+			429 => (),
+			_ => return None
+		}
+
+		info!("{}: Failed fetch, trying again in 0.5 seconds.", word);
+
+		tokio::time::sleep(Duration::from_millis(1000)).await;
+	};
+
+	Some(
+			req
+			.json::<Vec<WordReq>>()
+			.await.ok()?
+			.into_iter()
+			.fold(HashSet::new(), |acc, e| {
+				if word == e.word {
+					acc.into_iter()
+						.chain(e.parts.into_iter())
+						.collect()
+				} else {
+					acc
+				}
+			})
+	)
+}
+
+async fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) {
 	let path = Path::new("results").join(namespace);
 
 	let root = path.join("index.dat");
@@ -245,7 +281,28 @@ fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) {
 
 		words.sort_by(|(_, a), (_, b)| b.cmp(a));
 
-		let words: Vec<&String> = words.into_iter().map(|(k, _)| k).collect();
+		let words = words
+			.into_iter()
+			.map(|(k, _)| k)
+			.filter (|k| k.len() >= 3)
+			.take(3000);
+
+		let words: Vec<&String>  = stream::iter(words)
+			.filter_map(|w| async move {
+				let a = word_parts(w).await?;
+
+				info!("POS for {}: {:?}", w, a);
+
+				if a.contains(&PartOfSpeech::Conjunction) ||
+					a.contains(&PartOfSpeech::Preposition) {
+
+					None
+				} else {
+					Some (w)
+				}
+			})
+			.collect()
+			.await;
 
 		for word in words {
 			f.write_all(format!("{}\n", word).as_bytes()).unwrap();
@@ -263,7 +320,8 @@ fn gen_word_frequency<'a> (namespace: &str, dict: &'a Dict, start: u64) {
 	}
 }
 
-fn main () {
+#[tokio::main(flavor = "current_thread")]
+async fn main () {
 	log4rs::init_file("log/config.yaml", Default::default()).unwrap();
 
 	info!("Initiated Logger");
@@ -271,7 +329,7 @@ fn main () {
 	let dict = load_dict(DBDICT).unwrap();
 
 	// this will be discarded as it is already serialized
-	gen_word_frequency("frequency", &dict, 0);
+	gen_word_frequency("frequency", &dict, 0).await;
 
 	let srv = Server::new("").unwrap();
 	let conf = Config::build(Environment::active().unwrap())
@@ -460,17 +518,23 @@ mod test {
 	#[tokio::test]
 	/// api request
 	async fn fetch () {
-		async fn req (word: &str) -> Vec<WordReq>{
-			reqwest::get(format!("{}{}", DICT_URI, word))
-			.await.unwrap()
-			.json::<Vec<WordReq>>()
-			.await.unwrap()
-		}
-
-		let words = vec!["cow", "fetus", "oblong", "quickly", "and", "then", "but", "the", "a"];
+		let words = vec![
+			"cow",
+			"fetus",
+			"oblong",
+			"quickly",
+			"and",
+			"then",
+			"but",
+			"the",
+			"a",
+			"obtuse",
+			"bestial",
+			"ewohgoijf"
+		];
 
 		for word in words {
-			println!("{:?}", req(word).await);
+			println!("{}: {:?}", word, word_parts(word).await);
 		}
 	}
 }
