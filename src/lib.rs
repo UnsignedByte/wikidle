@@ -78,6 +78,13 @@ impl CState {
 		})
 	}
 
+	/// All valid words
+	pub fn words(&self) -> Vec<String> {
+		self.corr.dict().keys()
+			.map(|e| e.clone())
+			.collect()
+	}
+
 	/// Current correct answer
 	pub fn answer (&self) -> &String {
 		&self.wordlist[Utc::today()
@@ -115,7 +122,7 @@ impl CState {
 					.enumerate()
 					.collect();
 
-				dat.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+				dat.sort_unstable_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
 
 				let dat: HashMap<u32, usize> = dat.into_iter()
 					.enumerate()
@@ -140,7 +147,7 @@ impl CState {
 	}
 
 	/// get rank of word `b` in word `a`'s list
-	pub fn rank(&mut self, a: &str, b: &str) -> Option<usize> {
+	pub fn rank (&mut self, a: &str, b: &str) -> Option<usize> {
 		self.ranks(a)?
 			.get(&self.corr.index(b)?)
 			.map(|e| *e)
@@ -171,9 +178,9 @@ fn accept <T : Serialize> (data: T) -> Response<'static> {
 
 /// Get correlation data between two sets of words
 #[post("/dev/corr", format = "json", data = "<data>")]
-fn corr (data: Json<(Vec<String>, Vec<String>)>, mut state: State<MState>) -> Response {
+fn corr (data: Json<(Vec<String>, Vec<String>)>, state: State<MState>) -> Response {
 	let (a, b) = data.into_inner();
-	let mut state = match state.borrow_mut().write() {
+	let mut state = match state.write() {
 		Err(_) => return reject(Status::BadRequest, "Could not access internal server data."),
 		Ok(s) => s
 	};
@@ -188,6 +195,29 @@ fn corr (data: Json<(Vec<String>, Vec<String>)>, mut state: State<MState>) -> Re
 		None => reject(Status::BadRequest, "Input requested data for invalid words"),
 		Some (e) => accept(e)
 	}
+}
+
+/// Get raw rank and corr data for a word
+#[get("/dev/raw?<word>")]
+fn raw (word: String, state: State<MState>) -> Response {
+	let mut state = match state.write() {
+		Err(_) => return reject(Status::BadRequest, "Could not access internal state"),
+		Ok(s) => s
+	};
+
+	let mut set : Vec<(usize, String)> = state.words()
+		.into_iter()
+		.map(|e| (state.rank(&word, &e).unwrap(), e))
+		.collect();
+
+	set.sort_unstable_by_key(|(a, _)| *a);
+
+	accept(
+		set.into_iter()
+			.map(|(_,k)| (state.corr(&word, &k).unwrap(), k))
+			.map(|(a,b)| (b,a))
+			.collect::<Vec<(String,f64)>>()
+	)
 }
 
 /// Returned when a guess is made
@@ -245,7 +275,7 @@ impl Launch for Server {
 
 		app
 			.manage(self.data)
-			.mount(path.join("api").to_str().unwrap_or("api/"), routes![corr, guess])
+			.mount(path.join("api").to_str().unwrap_or("api/"), routes![corr, raw, guess])
 			.mount(path.to_str().unwrap_or(""), self.static_f)
 	}
 }
