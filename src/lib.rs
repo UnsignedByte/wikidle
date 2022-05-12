@@ -1,5 +1,6 @@
 #![feature(proc_macro_hygiene, decl_macro, try_trait_v2)]
 
+use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use std::sync::RwLock;
 use std::borrow::BorrowMut;
@@ -49,6 +50,7 @@ lazy_static! {
 
 struct CState {
 	cache: LruCache<u32, Vec<f64>>,
+	ranks: LruCache<u32, HashMap<u32, usize>>,
 	corr: Correlation,
 	wordlist: Vec<String>,
 }
@@ -68,6 +70,7 @@ impl CState {
 
 		Ok (CState {
 			cache: LruCache::new(sz),
+			ranks: LruCache::new(10),
 			corr: bincode::deserialize_from(
 					File::open(root.join(CORRF))?
 				).map_err(|_| std::io::ErrorKind::InvalidData)?,
@@ -86,7 +89,7 @@ impl CState {
 	}
 
 	/// load correlation data for a word and cache it
-	fn loadcorr	(&mut self, w: &str) -> Option<Vec<f64>> {
+	fn corrs	(&mut self, w: &str) -> Option<Vec<f64>> {
 		let wind = self.corr.index(w)?;
 
 		match self.cache.get(&wind) {
@@ -99,14 +102,48 @@ impl CState {
 		Some(self.cache.peek(&wind)?.clone())
 	}
 
+	/// get ranks for a word
+	fn ranks(&mut self, w: &str) -> Option<HashMap<u32, usize>>{
+		let wind = self.corr.index(w)?;
+
+		match self.ranks.get(&wind) {
+			Some(_) => (),
+			None => {
+				let dat = self.corrs(w)?;
+
+				let mut dat: Vec<(usize,f64)> = dat.into_iter()
+					.enumerate()
+					.collect();
+
+				dat.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+
+				let dat: HashMap<u32, usize> = dat.into_iter()
+					.enumerate()
+					.map(|(i, (w, _))| (w as u32, i))
+					.collect();
+
+				self.ranks.push(wind, dat);
+			}
+		}
+
+		Some(self.ranks.peek(&wind)?.clone())
+	}
+
 	/// correlation between words `a` and `b`
 	pub fn corr (&mut self, a: &str, b: &str) -> Option<f64> {
 		let a = self.corr.index(a)?;
 
 		Some(match self.cache.get(&a) {
 			Some(c) => c[self.corr.index(b)? as usize],
-			None => self.loadcorr(b)?[a as usize]
+			None => self.corrs(b)?[a as usize]
 		})
+	}
+
+	/// get rank of word `b` in word `a`'s list
+	pub fn rank(&mut self, a: &str, b: &str) -> Option<usize> {
+		self.ranks(a)?
+			.get(&self.corr.index(b)?)
+			.map(|e| *e)
 	}
 }
 
@@ -156,7 +193,7 @@ fn corr (data: Json<(Vec<String>, Vec<String>)>, mut state: State<MState>) -> Re
 /// Returned when a guess is made
 #[derive(Serialize,Debug)]
 struct GuessData {
-	rank: u32, // approximate rank
+	rank: usize, // approximate rank
 	corr: f64,
 	correct: bool // is the word the answer for today?
 }
@@ -173,8 +210,8 @@ fn guess(word: String, state: State<MState>) -> Response {
 
 	let mut guess = || -> Option<GuessData> {
 		Some(GuessData {
-			corr: state.corr(&word, &ans)?,
-			rank: 0,
+			corr: state.corr(&ans, &word)?,
+			rank: state.rank(&ans, &word)?,
 			correct: word == ans
 		})
 	};
