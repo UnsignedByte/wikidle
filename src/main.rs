@@ -8,7 +8,7 @@ use server::{
 	Launch,
 	rocket::{
 		self,
-		config::{Config, Environment}
+		config::{Config, Environment, LoggingLevel}
 	}
 };
 use std::collections::HashMap;
@@ -29,8 +29,8 @@ use serde::{
 	de::{self, Deserializer, Visitor, MapAccess, IgnoredAny}
 };
 use core::fmt::Formatter;
-use log::{info, error};
 use const_format::formatcp;
+use log::{info, error};
 
 const DBNAME: &str = "enwiki-20220101-pages-articles-multistream";
 const DBDATA: &str = formatcp!("data/{}/{0}.xml", DBNAME);
@@ -335,6 +335,7 @@ async fn main () {
 	let conf = Config::build(Environment::active().unwrap())
 		.address("127.0.0.1")
     .port(8000)
+    .log_level(LoggingLevel::Normal)
     .unwrap();
 
 	let app = rocket::custom(conf);
