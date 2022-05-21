@@ -1,0 +1,42 @@
+/*
+* @Author: UnsignedByte
+* @Date:   2022-04-30 07:05:21
+* @Last Modified by:   UnsignedByte
+* @Last Modified time: 2022-04-30 09:15:22
+*/
+
+:root {
+	
+}
+
+body {
+	font-family: SFMono-Regular,Consolas,"Courier New",monospace;
+	margin: 0;
+	height: 100%;
+}
+
+#guess-wrapper {
+	display: flex;
+	justify-content: center;
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	padding-left: 1.5vw;
+	padding-right: 1.5vw;
+	padding-bottom: 2vh;
+	padding-top: 1.5vh;
+}
+
+#guess-form {
+	display: flex;
+	width: fit-content;
+	min-width: 50%;
+}
+#guess {
+	flex-grow: 4;
+}
+
+#guess-submit {
+	flex-grow: 1;
+}

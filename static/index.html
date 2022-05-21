@@ -6,5 +6,21 @@
 		<link rel="stylesheet" type="text/css" href="index.css">
 	</head>
 	<body>
+		<header>
+			<h1>Wikidle</h1>
+			<p id="description">
+				Wikipedia game.
+			</p>
+		</header>
+		<main>
+			<table id="guesses"></table>
+			<div id="guess-wrapper">
+				<form id="guess-form">
+					<input type="text" placeholder="Guess" autofocus id="guess" pattern="[a-zA-Z]+">
+					<input type="submit" value="Guess" id="guess-submit">
+				</form>
+			</div>
+		</main>
+		<script type="text/javascript" src="index.js"></script>
 	</body>
 </html>
