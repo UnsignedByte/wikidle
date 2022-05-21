@@ -8,14 +8,16 @@
 	<body>
 		<header>
 			<h1>Wikidle</h1>
-			<p id="description">
-				Wikipedia game.
-			</p>
+			<div id="description">
+				<p>
+					-dle game for guessing words by the correlations of their  appearance in Wikipedia articles.
+				</p>
+			</div>
 		</header>
 		<main>
 			<table id="guesses"></table>
 			<div id="guess-wrapper">
-				<form id="guess-form">
+				<form id="guess-form" autocomplete="off">
 					<input type="text" placeholder="Guess" autofocus id="guess" pattern="[a-zA-Z]+">
 					<input type="submit" value="Guess" id="guess-submit">
 				</form>

@@ -2,17 +2,19 @@
 * @Author: UnsignedByte
 * @Date:   2022-04-30 07:05:21
 * @Last Modified by:   UnsignedByte
-* @Last Modified time: 2022-04-30 09:15:22
+* @Last Modified time: 2022-05-21 09:02:13
 */
 
 :root {
-	
+	--bright: #fcfaf5;
+	--mid: #dbd6ca;
 }
 
 body {
 	font-family: SFMono-Regular,Consolas,"Courier New",monospace;
 	margin: 0;
 	height: 100%;
+	background-color: var(--bright)
 }
 
 #guess-wrapper {
@@ -26,6 +28,7 @@ body {
 	padding-right: 1.5vw;
 	padding-bottom: 2vh;
 	padding-top: 1.5vh;
+	background-color: var(--mid);
 }
 
 #guess-form {
@@ -33,10 +36,58 @@ body {
 	width: fit-content;
 	min-width: 50%;
 }
+
 #guess {
 	flex-grow: 4;
 }
 
 #guess-submit {
 	flex-grow: 1;
+}
+
+#guesses {
+	margin: 1vh;
+	margin-bottom: 6vh;
+} 
+
+#guesses th,
+#guesses td {
+	padding-left: 0.5em;
+	padding-right: 0.5em;
+}
+
+#guesses th:nth-child(3),
+#guesses td:nth-child(3) {
+	min-width: 6em;
+}
+
+#guesses th:nth-child(2),
+#guesses td:nth-child(2) {
+	min-width: 10em;
+}
+
+header {
+	background-color: var(--mid);
+	width: 100%;
+	display: flex;
+	justify-content: stretch;
+}
+
+header > h1 {
+	display: flex;
+	margin: 3vh;
+	align-items: center;
+}
+
+#description {
+	flex-grow: 1;
+	margin: 1vh;
+  display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+#description > p {
+	text-align: center;
+	max-width: 30em;
 }

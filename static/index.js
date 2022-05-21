@@ -2,13 +2,15 @@
 * @Author: UnsignedByte
 * @Date:   2022-05-04 21:12:10
 * @Last Modified by:   UnsignedByte
-* @Last Modified time: 2022-05-20 21:14:55
+* @Last Modified time: 2022-05-20 21:25:29
 */
 
 (() => {
 	let guesstable = document.getElementById("guesses");
 
 	let guesses = []
+
+	update(guesses, document.getElementById("guesses"));
 
 	function update (gs, t) {
 		gs.sort((a, b) => b.corr-a.corr); // sort by corr value
@@ -23,7 +25,7 @@
 		let header = t.tHead.insertRow(0);
 		header.insertCell(-1).outerHTML = `<th>#</th>`
 		header.insertCell(-1).outerHTML = `<th>Guess</th>`
-		header.insertCell(-1).outerHTML = `<th>Correlation</th>`
+		header.insertCell(-1).outerHTML = `<th>Corr</th>`
 		header.insertCell(-1).outerHTML = `<th>Rank</th>`
 
 		t.tHead.insertRow(-1).insertCell(0).outerHTML = "<td colspan=4><hr></td>"
