@@ -205,10 +205,17 @@ fn raw (word: String, state: State<MState>) -> Response {
 		Ok(s) => s
 	};
 
-	let mut set : Vec<(usize, String)> = state.words()
-		.into_iter()
-		.map(|e| (state.rank(&word, &e).unwrap(), e))
-		.collect();
+	let mut set : Vec<(usize, String)> = 
+		match state.words()
+			.into_iter()
+			.map(|e| match state.rank(&word, &e) {
+				Some (k) => Some ( (k, e) ),
+				None => None
+			})
+			.collect::<Option<Vec<(usize, String)>>>() {
+			None => return reject(Status::BadRequest, "Input requested data for invalid word"),
+			Some (k) => k
+		};
 
 	set.sort_unstable_by_key(|(a, _)| *a);
 
