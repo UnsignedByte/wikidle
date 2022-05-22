@@ -2,7 +2,7 @@
 * @Author: UnsignedByte
 * @Date:   2022-05-04 21:12:10
 * @Last Modified by:   UnsignedByte
-* @Last Modified time: 2022-05-20 21:25:29
+* @Last Modified time: 2022-05-21 21:30:43
 */
 
 (() => {
@@ -40,6 +40,15 @@
 		})
 	}
 
+	function showerror (s) {
+		document.getElementById("errormsg").innerHTML = s;
+	  var el = document.getElementById('error');
+	  el.classList.remove("static");
+	  el.style.animation = 'none';
+	  el.offsetHeight; /* trigger reflow */
+	  el.style.animation = null; 
+	}
+
 	document.getElementById("guess-form").addEventListener("submit", e => {
 		e.preventDefault();
 
@@ -53,11 +62,15 @@
 		fetch(`/api/guess?word=${s}`)
 			.then(x=>{
 				if (x.status !== 200) {
+					x.text().then(showerror)
 					return;
 				}
 
 				x.json().then(x=> {
-					if (guesses.some(x=>x.guess === s)) return;
+					if (guesses.some(x=>x.guess === s)) {
+						showerror(`Already guessed ${s}.`);
+						return;
+					}
 
 					guesses.push({
 						guess: s,
@@ -70,4 +83,5 @@
 				})
 		})
 	})
+
 })()

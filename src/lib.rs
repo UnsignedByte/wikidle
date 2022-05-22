@@ -161,12 +161,13 @@ pub struct Server {
 	static_f: StaticFiles
 }
 
-fn reject (status: Status, msg: &str) -> Response {
+fn reject (status: Status, msg: &str) -> Response<'static> {
 	Response::build()
 		.status(status)
 		.header(ContentType::Plain)
-		.streamed_body(msg.as_bytes())
-		.finalize()
+		.sized_body(
+			Cursor::new(msg.to_owned().into_bytes())
+		).finalize()
 }
 
 fn accept <T : Serialize> (data: T) -> Response<'static> {
@@ -181,7 +182,7 @@ fn accept <T : Serialize> (data: T) -> Response<'static> {
 fn corr (data: Json<(Vec<String>, Vec<String>)>, state: State<MState>) -> Response {
 	let (a, b) = data.into_inner();
 	let mut state = match state.write() {
-		Err(_) => return reject(Status::BadRequest, "Could not access internal server data."),
+		Err(_) => return reject(Status::BadRequest, "Could not access internal state (Server error)."),
 		Ok(s) => s
 	};
 
@@ -192,7 +193,7 @@ fn corr (data: Json<(Vec<String>, Vec<String>)>, state: State<MState>) -> Respon
 					state.corr(&i, j)
 				}).collect()
 		).collect::<Option<Vec<Vec<f64>>>>() {
-		None => reject(Status::BadRequest, "Input requested data for invalid words"),
+		None => reject(Status::BadRequest, "Some words were invalid."),
 		Some (e) => accept(e)
 	}
 }
@@ -201,7 +202,7 @@ fn corr (data: Json<(Vec<String>, Vec<String>)>, state: State<MState>) -> Respon
 #[get("/dev/raw?<word>")]
 fn raw (word: String, state: State<MState>) -> Response {
 	let mut state = match state.write() {
-		Err(_) => return reject(Status::BadRequest, "Could not access internal state"),
+		Err(_) => return reject(Status::BadRequest, "Could not access internal state (Server error)."),
 		Ok(s) => s
 	};
 
@@ -213,7 +214,7 @@ fn raw (word: String, state: State<MState>) -> Response {
 				None => None
 			})
 			.collect::<Option<Vec<(usize, String)>>>() {
-			None => return reject(Status::BadRequest, "Input requested data for invalid word"),
+			None => return reject(Status::BadRequest, &format!("{word} was not a valid word.")),
 			Some (k) => k
 		};
 
@@ -239,7 +240,7 @@ struct GuessData {
 #[get("/guess?<word>")]
 fn guess(word: String, state: State<MState>) -> Response {
 	let mut state = match state.write() {
-		Err(_) => return reject(Status::BadRequest, "Could not access internal state"),
+		Err(_) => return reject(Status::BadRequest, "Could not access internal state (Server error)."),
 		Ok(s) => s
 	};
 
@@ -258,7 +259,7 @@ fn guess(word: String, state: State<MState>) -> Response {
 			debug!(target:"app::dump", "Guessed {}, correct word was {}, data: {:?}", word, ans, k);
 			accept(k)
 		},
-		None => reject(Status::BadRequest, "Guessed an invalid word.")
+		None => reject(Status::BadRequest, &format!("{word} was not a valid word."))
 	}
 }
 
