@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use std::sync::RwLock;
+use std::sync::{RwLock,Arc};
 use std::borrow::BorrowMut;
 use std::path::{Path};
 use lru::LruCache;
@@ -11,6 +11,7 @@ use server::{
 	Launch,
 	rocket::{
 		self,
+		fairing::AdHoc,
 		State,
 		get, post,
 		routes,
@@ -32,10 +33,19 @@ use rand::{
 	rngs::SmallRng,
 };
 use chrono::{
+	Date,
 	NaiveDate,
+	TimeZone,
+	Duration,
 	offset::Utc,
 };
-use log::{debug, trace};
+use tokio::{
+	time::{
+		interval,
+		Duration as TDuration
+	}
+};
+use log::{debug, info};
 
 pub mod database;
 
@@ -85,14 +95,18 @@ impl CState {
 			.collect()
 	}
 
-	/// Current correct answer
-	pub fn answer (&self) -> &String {
-		&self.wordlist[Utc::today()
+	pub fn word<Tz: TimeZone> (&self, day: Date<Tz>) -> &String {
+		&self.wordlist[day
 			.naive_utc()
 			.signed_duration_since(*ROOT_DATE)
 			.num_days()
 			.rem_euclid(self.wordlist.len() as i64)
 			as usize]
+	}
+
+	/// Current correct answer
+	pub fn answer (&self) -> &String {
+		self.word(Utc::today())
 	}
 
 	/// load correlation data for a word and cache it
@@ -102,6 +116,7 @@ impl CState {
 		match self.cache.get(&wind) {
 			Some(_) => (),
 			None => {
+				debug!("Could not find corrs for {} in cache, loading...", w);
 				self.cache.push(wind, self.corr.corrall(w)?);
 			}
 		}
@@ -116,6 +131,7 @@ impl CState {
 		match self.ranks.get(&wind) {
 			Some(_) => (),
 			None => {
+				debug!("Could not find ranks for {} in cache, loading...", w);
 				let dat = self.corrs(w)?;
 
 				let mut dat: Vec<(usize,f64)> = dat.into_iter()
@@ -152,9 +168,15 @@ impl CState {
 			.get(&self.corr.index(b)?)
 			.map(|e| *e)
 	}
+
+	/// Make sure the word is in cache.
+	pub fn cache(&mut self, word: &str) {
+		let _ = self.corrs(word);
+		let _ = self.ranks(word);
+	}
 }
 
-type MState = RwLock<CState>;
+type MState = Arc<RwLock<CState>>;
 
 pub struct Server {
 	data: MState,
@@ -206,17 +228,19 @@ fn raw (word: String, state: State<MState>) -> Response {
 		Ok(s) => s
 	};
 
+	debug!("Getting ranks");
+
+	if state.ranks(&word) == None {
+		return reject(Status::BadRequest, &format!("{word} was not a valid word."));
+	}
+
+	debug!("collecting");
+
 	let mut set : Vec<(usize, String)> = 
-		match state.words()
+		state.words()
 			.into_iter()
-			.map(|e| match state.rank(&word, &e) {
-				Some (k) => Some ( (k, e) ),
-				None => None
-			})
-			.collect::<Option<Vec<(usize, String)>>>() {
-			None => return reject(Status::BadRequest, &format!("{word} was not a valid word.")),
-			Some (k) => k
-		};
+			.map(|e| (state.rank(&word, &e).unwrap(), e))
+			.collect();
 
 	set.sort_unstable_by_key(|(a, _)| *a);
 
@@ -270,10 +294,10 @@ impl Launch for Server {
 		const CACHE_LEN: usize = 1000;
 
 		Ok(Server {
-			data: RwLock::new(CState::new(
+			data: Arc::new(RwLock::new(CState::new(
 				root,
 				CACHE_LEN 
-			)?),
+			)?)),
 			static_f: StaticFiles::from(root.join("static"))
 		})
 	}
@@ -283,6 +307,38 @@ impl Launch for Server {
 
 		app
 			.manage(self.data)
+			.attach(AdHoc::on_attach("Use state", |s| {
+				let cs: MState = s.state::<MState>().unwrap().clone();
+
+				let cache = move || {
+					let mut csw = cs.write().unwrap();
+
+					let today = Utc::today();
+					let yesterday = csw.word(today - Duration::days(1)).clone();
+					let tomorrow = csw.word(today + Duration::days(1)).clone();
+					let today = csw.word(today).clone();
+
+					info!("Caching words {}, {}, {}.", yesterday, today, tomorrow);
+
+					csw.cache(&yesterday); // yesterday
+					csw.cache(&tomorrow); // tomorrow
+					csw.cache(&today); // today
+				};
+
+				cache();
+
+				tokio::spawn(async move {
+					let mut u = interval(TDuration::from_secs(60u64 * 60u64));
+
+					loop {
+						cache();
+
+						u.tick().await;
+					}
+				});
+
+				Ok(s)
+			}))
 			.mount(path.join("api").to_str().unwrap_or("api/"), routes![corr, raw, guess])
 			.mount(path.to_str().unwrap_or(""), self.static_f)
 	}

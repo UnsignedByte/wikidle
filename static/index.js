@@ -2,7 +2,7 @@
 * @Author: UnsignedByte
 * @Date:   2022-05-04 21:12:10
 * @Last Modified by:   UnsignedByte
-* @Last Modified time: 2022-05-21 21:30:43
+* @Last Modified time: 2022-05-21 21:43:52
 */
 
 (() => {
@@ -82,6 +82,7 @@
 					update(guesses, document.getElementById("guesses"));
 				})
 		})
+		.catch(e => showerror("Failed to fetch from server. Maybe check your internet?"))
 	})
 
 })()
