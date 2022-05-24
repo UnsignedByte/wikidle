@@ -7,6 +7,7 @@ use std::borrow::BorrowMut;
 use std::path::{Path};
 use lru::LruCache;
 use std::fs::File;
+use std::thread;
 use server::{
 	Launch,
 	rocket::{
@@ -24,6 +25,7 @@ use server::{
 	}
 };
 
+use util::schedule::Schedule;
 use database::correlation::Correlation;
 use std::io::{BufRead,BufReader,Cursor};
 use lazy_static::lazy_static;
@@ -48,6 +50,7 @@ use tokio::{
 use log::{debug, info};
 
 pub mod database;
+pub mod util;
 
 const VALID_ANSWERS: &str = "data/answers"; // valid answer words
 const CORRF: &str = "results/frequency/corrindex.dat";
@@ -60,9 +63,10 @@ lazy_static! {
 
 struct CState {
 	cache: LruCache<u32, Vec<f64>>,
-	ranks: LruCache<u32, HashMap<u32, usize>>,
+	ranks: LruCache<u32, Vec<usize>>,
 	corr: Correlation,
 	wordlist: Vec<String>,
+	revdict: Vec<String>,
 }
 
 impl CState {
@@ -78,13 +82,25 @@ impl CState {
 			.collect();
 		wordlist.shuffle(&mut rng);
 
+		let corr: Correlation = bincode::deserialize_from(
+			File::open(root.join(CORRF))?
+		).map_err(|_| std::io::ErrorKind::InvalidData)?;
+
+		let mut revdict: Vec<(String, u32)> = corr.dict()
+			.iter()
+			.map(|(k, v)| (k.clone(), *v))
+			.collect();
+
+		revdict.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
+
 		Ok (CState {
 			cache: LruCache::new(sz),
 			ranks: LruCache::new(10),
-			corr: bincode::deserialize_from(
-					File::open(root.join(CORRF))?
-				).map_err(|_| std::io::ErrorKind::InvalidData)?,
+			corr,
 			wordlist,
+			revdict: revdict.into_iter()
+				.map(|(k, _)| k)
+				.collect()
 		})
 	}
 
@@ -125,7 +141,7 @@ impl CState {
 	}
 
 	/// get ranks for a word
-	fn ranks(&mut self, w: &str) -> Option<HashMap<u32, usize>>{
+	fn ranks(&mut self, w: &str) -> Option<Vec<usize>>{
 		let wind = self.corr.index(w)?;
 
 		match self.ranks.get(&wind) {
@@ -140,10 +156,15 @@ impl CState {
 
 				dat.sort_unstable_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
 
-				let dat: HashMap<u32, usize> = dat.into_iter()
-					.enumerate()
-					.map(|(i, (w, _))| (w as u32, i))
-					.collect();
+				let dat: Vec<usize> = {
+					let mut dd : Vec<usize> = vec![0; dat.len()];
+
+					for (i, (w, _)) in dat.into_iter().enumerate() {
+						dd[w] = i;
+					}
+
+					dd
+				};
 
 				self.ranks.push(wind, dat);
 			}
@@ -165,7 +186,7 @@ impl CState {
 	/// get rank of word `b` in word `a`'s list
 	pub fn rank (&mut self, a: &str, b: &str) -> Option<usize> {
 		self.ranks(a)?
-			.get(&self.corr.index(b)?)
+			.get(self.corr.index(b)? as usize)
 			.map(|e| *e)
 	}
 
@@ -173,6 +194,11 @@ impl CState {
 	pub fn cache(&mut self, word: &str) {
 		let _ = self.corrs(word);
 		let _ = self.ranks(word);
+	}
+
+	/// get word of index
+	pub fn of_index(&self, ind: u32) -> Option<&String> {
+		self.revdict.get(ind as usize)
 	}
 }
 
@@ -223,33 +249,29 @@ fn corr (data: Json<(Vec<String>, Vec<String>)>, state: State<MState>) -> Respon
 /// Get raw rank and corr data for a word
 #[get("/dev/raw?<word>")]
 fn raw (word: String, state: State<MState>) -> Response {
-	let mut state = match state.write() {
-		Err(_) => return reject(Status::BadRequest, "Could not access internal state (Server error)."),
-		Ok(s) => s
-	};
+	let set = {
+		let mut state = match state.write() {
+			Err(_) => return reject(Status::BadRequest, "Could not access internal state (Server error)."),
+			Ok(s) => s
+		};
 
-	debug!("Getting ranks");
+		let set = match state.corrs(&word) {
+			None => return reject(Status::BadRequest, &format!("{word} was not a valid word.")),
+			Some(k) => k
+		};
 
-	if state.ranks(&word) == None {
-		return reject(Status::BadRequest, &format!("{word} was not a valid word."));
-	}
-
-	debug!("collecting");
-
-	let mut set : Vec<(usize, String)> = 
-		state.words()
-			.into_iter()
-			.map(|e| (state.rank(&word, &e).unwrap(), e))
+		let mut set: Vec<(usize,f64)> = set.into_iter()
+			.enumerate()
 			.collect();
 
-	set.sort_unstable_by_key(|(a, _)| *a);
+		set.sort_unstable_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
 
-	accept(
 		set.into_iter()
-			.map(|(_,k)| (state.corr(&word, &k).unwrap(), k))
-			.map(|(a,b)| (b,a))
+			.map(|(k, v)| (state.of_index(k as u32).unwrap().clone(), v))
 			.collect::<Vec<(String,f64)>>()
-	)
+	};
+
+	accept(set)
 }
 
 /// Returned when a guess is made
@@ -311,6 +333,7 @@ impl Launch for Server {
 				let cs: MState = s.state::<MState>().unwrap().clone();
 
 				let cache = move || {
+					info!("Awaiting write");
 					let mut csw = cs.write().unwrap();
 
 					let today = Utc::today();
@@ -325,19 +348,11 @@ impl Launch for Server {
 					csw.cache(&today); // today
 				};
 
-				cache();
+				// cache();
 
-				tokio::spawn(async move {
-					let mut u = interval(TDuration::from_secs(60u64 * 60u64));
-
-					loop {
-						cache();
-
-						u.tick().await;
-					}
-				});
-
-				Ok(s)
+				Ok(s.manage(
+					Schedule::new(cache, tokio::time::Duration::from_secs(60 * 60))
+				))
 			}))
 			.mount(path.join("api").to_str().unwrap_or("api/"), routes![corr, raw, guess])
 			.mount(path.to_str().unwrap_or(""), self.static_f)
