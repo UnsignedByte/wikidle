@@ -228,7 +228,7 @@ fn accept <T : Serialize> (data: T) -> Response<'static> {
 }
 
 /// Get correlation data between two sets of words
-#[post("/dev/corr", format = "json", data = "<data>")]
+#[post("/corr", format = "json", data = "<data>")]
 fn corr (data: Json<(Vec<String>, Vec<String>)>, state: State<MState>) -> Response {
 	let (a, b) = data.into_inner();
 	let mut state = match state.write() {
@@ -249,7 +249,7 @@ fn corr (data: Json<(Vec<String>, Vec<String>)>, state: State<MState>) -> Respon
 }
 
 /// Get raw rank and corr data for a word
-#[get("/dev/raw?<word>")]
+#[get("/raw?<word>")]
 fn raw (word: String, state: State<MState>) -> Response {
 	let set = {
 		let mut state = match state.write() {
