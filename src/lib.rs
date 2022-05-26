@@ -18,6 +18,8 @@ use server::{
 		routes,
 		http::{Status,ContentType},
 		response::{Response, Responder, content},
+		config::Environment,
+		Route
 	},
 	rocket_contrib::{
 		serve::StaticFiles,
@@ -327,7 +329,22 @@ impl Launch for Server {
 	fn mount <P: AsRef<Path>> (self, path: P, app: rocket::Rocket) -> rocket::Rocket {
 		let path = path.as_ref();
 
-		app
+		let mountdev = |app: rocket::Rocket, r: Vec<Route>| -> rocket::Rocket {
+			match app.config().environment {
+				Environment::Development => app
+					.mount(
+						&path.join("api")
+							.join("dev")
+							.to_str()
+							.unwrap_or("api/dev/"),
+							r
+					),
+				Environment::Staging |
+				Environment::Production => app
+			}
+		};
+
+		let app = app
 			.manage(self.data)
 			.attach(AdHoc::on_attach("Use state", |s| {
 				let cs: MState = s.state::<MState>().unwrap().clone();
@@ -354,7 +371,9 @@ impl Launch for Server {
 					Schedule::new(cache, tokio::time::Duration::from_secs(60 * 60))
 				))
 			}))
-			.mount(path.join("api").to_str().unwrap_or("api/"), routes![corr, raw, guess])
-			.mount(path.to_str().unwrap_or(""), self.static_f)
+			.mount(path.join("api").to_str().unwrap_or("api/"), routes![guess])
+			.mount(path.to_str().unwrap_or(""), self.static_f);
+
+		mountdev(app, routes![corr, raw])
 	}
 }

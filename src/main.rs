@@ -332,7 +332,7 @@ async fn main () {
 	gen_word_frequency("frequency", &dict, 0).await;
 
 	let srv = Server::new("").unwrap();
-	let conf = Config::build(Environment::active().unwrap())
+	let conf = Config::build(Environment::Development)
 		.address("127.0.0.1")
     .port(8000)
     .log_level(LoggingLevel::Normal)
@@ -537,5 +537,26 @@ mod test {
 		for word in words {
 			println!("{}: {:?}", word, word_parts(word).await);
 		}
+	}
+
+	#[test]
+	fn reactor () {
+		let rt = tokio::runtime::Builder::new_current_thread()
+			.enable_time()
+			.build()
+			.unwrap();
+
+		rt.block_on(async move {
+      let mut i = tokio::time::interval(tokio::time::Duration::from_secs(1));
+			i.reset();
+
+			loop {
+				println!("Awaiting");
+
+				i.tick().await;
+
+				println!("awaited");
+			};
+		});
 	}
 }

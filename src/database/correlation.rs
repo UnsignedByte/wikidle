@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use core::hash::{Hasher, Hash};
 use std::collections::{HashSet, HashMap};
 use threadpool::ThreadPool;
-use super::read::{Dict};
+use super::read::{Dict,strip};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
 use core::fmt::{Formatter, Debug};
@@ -246,7 +246,7 @@ impl Correlation {
 
 	/// Index of a word in the dictionary.
 	pub fn index (&self, a: &str) -> Option<u32> {
-		self.dict.get(&a.to_lowercase()).map(|e| *e)
+		self.dict.get(&strip(a)?).map(|e| *e)
 	}
 
 	/// Find the f64 index of a word pair correlation.

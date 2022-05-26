@@ -26,7 +26,7 @@ appenders:
         count: 5
         base: 1
 root:
-  level: debug
+  level: info
   appenders:
     - stdout
     - basic
@@ -37,6 +37,7 @@ loggers:
     appenders:
       - stdout
       - basic
+    additive: false
   app::dump:
     level: debug
     appenders:

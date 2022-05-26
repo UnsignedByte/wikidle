@@ -2,7 +2,7 @@
 * @Author: UnsignedByte
 * @Date:   2022-04-30 07:05:21
 * @Last Modified by:   UnsignedByte
-* @Last Modified time: 2022-05-21 21:30:40
+* @Last Modified time: 2022-05-23 17:03:50
 */
 
 :root {
@@ -46,7 +46,9 @@ body {
 }
 
 #guesses {
-	margin: 1vh;
+	margin-top: 1vh;
+	margin-left: 1vw;
+	margin-right: 1vw;
 	margin-bottom: 6vh;
 } 
 
@@ -79,13 +81,19 @@ header {
 
 header > h1 {
 	display: flex;
-	margin: 3vh;
+	margin-top: 3vh;
+	margin-bottom: 3vh;
+	margin-left: 3vw;
+	margin-right: 3vw;
 	align-items: center;
 }
 
 #description {
 	flex-grow: 1;
-	margin: 1vh;
+	margin-top: 1vh;
+	margin-bottom: 1vh;
+	margin-left: 1vw;
+	margin-right: 1vw;
   display: flex;
 	align-items: center;
 	justify-content: center;
@@ -101,7 +109,7 @@ header > h1 {
 	color: #de3f23;
 	margin: 0;
 	margin-top: 1vh;
-	margin-left: 1vh;
+	margin-left: 1vw;
 	animation: fadeout 5s;
 }
 
@@ -118,4 +126,31 @@ header > h1 {
 
 .static {
 	animation: none !important;
+}
+
+#icongroup {
+	display: flex;
+	flex-direction: column;
+	margin-top: 1vh;
+	margin-bottom: 1vh;
+	margin-left: 1vw;
+	margin-right: 1vw;
+	justify-content: space-evenly;
+}
+
+#icongroup .icon {
+	margin: 0;
+}
+
+#icongroup .icon i {
+	font-size: 24px;
+}
+
+#icongroup .icon i:hover {
+	animation: fa-beat 1s infinite linear;
+	--fa-beat-scale: 1.1;
+}
+
+#icongroup .icon i.fa-gear:hover {
+	animation: fa-spin 4s infinite linear;
 }

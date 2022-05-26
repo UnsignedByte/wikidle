@@ -6,6 +6,7 @@ use std::collections::{ HashMap };
 use std::io::{BufReader, BufRead};
 use lazy_static::lazy_static;
 use log::{debug, warn, trace};
+use unicode_normalization::UnicodeNormalization;
 
 use super::error::*;
 
@@ -36,6 +37,15 @@ lazy_static! {
 
 pub type Dict = HashMap<String, u32>;
 
+pub fn strip (word: &str) -> Option<String> {
+	word.nfc()
+		.filter(|c| c.is_ascii())
+		.map(|c| 
+			c.is_alphabetic()
+				.then(|| c.to_ascii_lowercase())
+		).collect::<Option<String>>()
+}
+
 pub fn load_dict<P: AsRef<Path>>(fname: P) -> Result<Dict> {
 	let mut dict: Dict = HashMap::new();
 
@@ -43,7 +53,10 @@ pub fn load_dict<P: AsRef<Path>>(fname: P) -> Result<Dict> {
 	let df = BufReader::new(df);
 
 	for (i, l) in df.lines().enumerate() {
-		dict.entry(l.map_err(|_| ErrorKind::Io)?.to_lowercase()).or_insert(i as u32);
+		if let Some(s) = strip(&l.map_err(|_| ErrorKind::Io)?) {
+			trace!("Inserting {} into dict.", &s);
+			dict.entry(s).or_insert(i as u32);
+		}
 	}
 
 	Ok(dict)

@@ -1,6 +1,6 @@
 /// Analyzes the wikipedia database
 use std::path::{Path, PathBuf};
-use super::read::Dict;
+use super::read::{Dict, strip};
 use core::fmt::{Formatter, Debug};
 use serde::de::{self, Deserialize, Deserializer, Visitor, MapAccess, SeqAccess};
 use serde::ser::{Serialize, SerializeStruct, Serializer};
@@ -9,12 +9,12 @@ use regex::Regex;
 use lazy_static::lazy_static;
 use std::io::{BufWriter, BufReader, Seek, SeekFrom};
 use std::fs::{File, OpenOptions};
-use log::{debug, trace};
+use log::{debug, trace, error};
 use super::error::*;
 
 lazy_static! {
 	/// Static regex for parsing words.
-	static ref WORD: Regex = Regex::new(r"\b[^\s]+\b").unwrap();
+	static ref WORD: Regex = Regex::new(r"\b([^\s]+?)(?:'s?)?\b").unwrap();
 }
 
 /// Struct representing the frequency analysis of words in the database.
@@ -74,12 +74,12 @@ impl<'a> Frequency<'a> {
 		trace!(target: "app::dump", "raw article:\n{}", article);
 
 		for word in WORD.captures_iter(&article) {
-			let word = &word[0];
-			let word = word.to_lowercase();
-
-			if let Some(i) = dict.get(&word) {
-				*data.entry(*i)
-					.or_insert(0) += 1;
+			let word = &word[1];
+			if let Some(word) = strip(word) {
+				if let Some(i) = dict.get(&word) {
+					*data.entry(*i)
+						.or_insert(0) += 1;
+				}
 			}
 		};
 
@@ -108,7 +108,10 @@ impl<'a> Frequency<'a> {
 				.map_err(|_| ErrorKind::Io)?;
 
 			let dmap: HashMap<u32,u16> = bincode::deserialize_from(&mut self.reader)
-				.map_err(|_| ErrorKind::Serialization)?;
+				.map_err(|e| {
+					error!(target: "app::dump", "Failed to load article with {:?}", e);
+					ErrorKind::Serialization
+				})?;
 
 			trace!(target: "app::dump", "Deserialized");
 
